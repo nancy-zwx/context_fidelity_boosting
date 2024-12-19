@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import accelerate
 from accelerate import Accelerator,InitProcessGroupKwargs
 import argparse
@@ -295,7 +296,8 @@ def decode(args, batch_input_ids, dec_depth, model, tokenizer):
                     "use_cache": True
                 }
 
-        outputs = model(**model_inputs, output_hidden_states=False)
+        model_inputs['output_hidden_states'] = False
+        outputs = model(**model_inputs)
         score = outputs.logits[:, -1:, :].clone().contiguous()
 
         if args.assigned_weight >= 0:
