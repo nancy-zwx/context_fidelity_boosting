@@ -6,17 +6,13 @@ export TRANSFORMERS_CACHE="${hf_cache}"
 export HF_HOME="${hf_cache}"
 
 
-# 运行evaluate
+## 运行evaluate
 
-# PRED_PATH=./eval/cnndm_example_input/cnndm_1_0.jsonl.output_topp0.9_genlen100_try.jsonl 
-# GOLD_DATA_PATH=./eval/cnndm_example_input/cnndm_1_0.jsonl
-# python eval/evaluate_summary.py --pred_path $PRED_PATH --data_path $GOLD_DATA_PATH
-
-
-PRED_PATH=./output/nqswap_1_0.jsonl.output_topp0.0_genlen10.jsonl
-GOLD_DATA_PATH=./eval/nqswap_example_input/nqswap_2_-1.jsonl
-python eval/evaluate_summary_nqswap.py --pred_path $PRED_PATH --data_path $GOLD_DATA_PATH 
+PRED_PATH=./output/cnndm_1_0.jsonl.output_topp0.9_genlen100_llama7b.jsonl
+GOLD_DATA_PATH=./eval/cnndm_example_input/cnndm_1_0.jsonl
+python eval/evaluate_summary.py --pred_path $PRED_PATH --data_path $GOLD_DATA_PATH
 
 
-
-
+# PRED_PATH=./output/nqswap_1_0.jsonl.output_topp0.0_genlen10.jsonl
+# GOLD_DATA_PATH=./eval/nqswap_example_input/nqswap_2_-1.jsonl
+# python eval/evaluate_summary_nqswap.py --pred_path $PRED_PATH --data_path $GOLD_DATA_PATH 

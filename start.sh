@@ -54,6 +54,7 @@ pip install sentencepiece
 pip install nltk
 pip install tensorboard
 pip install time
+pip install termcolor
 
 
 echo "Verifying installations..."
@@ -389,6 +390,14 @@ done
 ## result nqswap, opt-350m:
 ## weight 1_0(standard): 
 ## weight 2_-1(cad): 
+## boost delta 1: 
+## boost delta 2: 
+## boost delta 5: 
+## boost delta 10: 
+
+## result cnndm, llama-7b:
+## weight 1_0(standard): Average fact score: 0.7494 ROUGE results: {'rouge1': 0.2792295751583305, 'rouge2': 0.08255960177635246, 'rougeL': 0.1862742341199251}
+## weight 1.5_-0.5(cad): 
 ## boost delta 1: 
 ## boost delta 2: 
 ## boost delta 5: 

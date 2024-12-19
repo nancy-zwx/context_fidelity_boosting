@@ -1070,7 +1070,7 @@ def main():
                     continue
 
         # 9. 保存结果
-        output_dir = "/apdcephfs_cq10/share_1567347/share_info/wendyzhang/context-aware-decoding/output"
+        output_dir = "/apdcephfs_cq10/share_1567347/share_info/wendyzhang/cfb/output"
         os.makedirs(output_dir, exist_ok=True)
         out_json_fn = os.path.join(
             output_dir,
