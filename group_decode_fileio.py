@@ -155,95 +155,187 @@ def filter_logits_top_p(logits, top_p, negative_multiplier=False):
 
 
 # adjusted decode function on single gpu
+# def decode(args, batch_input_ids, dec_depth, model, tokenizer):
+#     # 保持原有的参数检查
+#     batch_size = args.per_device_eval_batch_size
+#     assert batch_input_ids.size(1) == args.context_size
+#     assert args.decode_truncate_len >= 0
+#     assert (args.max_seq_length - args.context_size - args.decode_truncate_len) % dec_depth == 0
+#     unit_seq_len = int((args.max_seq_length - args.context_size - args.decode_truncate_len) / dec_depth)
+
+#     # 保持原有的输入处理
+#     if args.context_size > 0:
+#         unit_context_input_ids = batch_input_ids[:, :args.context_size].clone()
+#     else:
+#         raise ValueError("context cannot be none")
+    
+#     history_decode_ids = None
+#     past_key_values = None  # necessary for causal models
+
+#     # 保持原有的模型类别处理
+#     if args.model_category == 'seq2seq':
+#         model_kwargs = model._prepare_encoder_decoder_kwargs_for_generation(
+#             batch_input_ids[:, :args.context_size].clone(), dict(), None
+#         )
+#         history_decode_ids = model._prepare_decoder_input_ids_for_generation(
+#             batch_input_ids.size(0),
+#             model_kwargs=model_kwargs,
+#             device=batch_input_ids.device,
+#         )
+#     else:
+#         model_kwargs = None
+
+#     for _i in range(dec_depth):
+#         if args.model_category == 'causal':
+#             model_inputs = model.prepare_inputs_for_generation(unit_context_input_ids, past_key_values=past_key_values)
+#             outputs = model(**model_inputs, output_hidden_states=False)
+#         elif args.model_category == 'seq2seq':
+#             model_inputs = model.prepare_inputs_for_generation(history_decode_ids, **model_kwargs)
+#             outputs = model(**model_inputs, output_hidden_states=False)
+#         else:
+#             raise ValueError("model category not supported")
+
+#         score = outputs.logits[:, -1:, :].clone().contiguous()
+
+#         # 应用过滤，保持原有逻辑
+#         if args.assigned_weight >= 0:
+#             score = filter_logits_top_p(score, top_p=args.filter_top_p)
+#         else:
+#             score = filter_logits_top_p(score, top_p=args.filter_top_p_prior, negative_multiplier=True)
+
+#         # 移除分布式相关代码，直接使用本地分数
+#         projected_logits = logits_sampling_projection(score, top_p=args.projection_top_p, one_hot_value=args.one_hot_value)
+        
+#         # 计算token IDs
+#         simplex = torch.nn.functional.softmax(projected_logits, dim=-1)
+#         real_token_ids_list = torch.argmax(simplex, dim=-1).view(batch_size, unit_seq_len)
+
+#         # 更新历史记录
+#         if args.model_category == 'causal':
+#             unit_context_input_ids = torch.cat((unit_context_input_ids, real_token_ids_list), dim=1)
+
+#         if history_decode_ids is None:
+#             history_decode_ids = real_token_ids_list
+#         else:
+#             history_decode_ids = torch.cat((history_decode_ids, real_token_ids_list), dim=1)
+
+#         # 更新past_key_values
+#         if args.model_category == 'causal':
+#             past_key_values = outputs.past_key_values
+#         elif args.model_category == 'seq2seq':
+#             model_kwargs["past_key_values"] = outputs.past_key_values
+
+#         # 保持原有的EOS检查
+#         assert real_token_ids_list.size(0) == 1
+#         assert real_token_ids_list.size(1) == 1
+#         if real_token_ids_list[0][-1] == model.generation_config.eos_token_id:
+#             break
+
+#     # 处理输出
+#     if args.context_size > 0:
+#         init_context_input_ids = batch_input_ids[:, :args.context_size].clone()
+#         context_sequences = tokenizer.batch_decode(init_context_input_ids.detach().to('cpu'))
+#     else:
+#         init_context_input_ids = None
+#         context_sequences = None
+
+#     sampled_sequences = tokenizer.batch_decode(history_decode_ids.clone().detach().to('cpu'), skip_special_tokens=True)
+#     logger.info(f"context: {context_sequences}")
+#     logger.info(f"sampled: {colored(str(sampled_sequences), 'red')}")
+
+#     return history_decode_ids, init_context_input_ids, None, sampled_sequences, context_sequences, None
+
+## adjusted for llama
 def decode(args, batch_input_ids, dec_depth, model, tokenizer):
-    # 保持原有的参数检查
     batch_size = args.per_device_eval_batch_size
     assert batch_input_ids.size(1) == args.context_size
     assert args.decode_truncate_len >= 0
     assert (args.max_seq_length - args.context_size - args.decode_truncate_len) % dec_depth == 0
     unit_seq_len = int((args.max_seq_length - args.context_size - args.decode_truncate_len) / dec_depth)
 
-    # 保持原有的输入处理
-    if args.context_size > 0:
-        unit_context_input_ids = batch_input_ids[:, :args.context_size].clone()
-    else:
+    unit_context_input_ids = batch_input_ids[:, :args.context_size].clone() if args.context_size > 0 else None
+    if unit_context_input_ids is None:
         raise ValueError("context cannot be none")
     
     history_decode_ids = None
-    past_key_values = None  # necessary for causal models
-
-    # 保持原有的模型类别处理
-    if args.model_category == 'seq2seq':
-        model_kwargs = model._prepare_encoder_decoder_kwargs_for_generation(
-            batch_input_ids[:, :args.context_size].clone(), dict(), None
-        )
-        history_decode_ids = model._prepare_decoder_input_ids_for_generation(
-            batch_input_ids.size(0),
-            model_kwargs=model_kwargs,
-            device=batch_input_ids.device,
-        )
-    else:
-        model_kwargs = None
+    past_key_values = None
+    attention_mask = torch.ones_like(unit_context_input_ids)
 
     for _i in range(dec_depth):
-        if args.model_category == 'causal':
-            model_inputs = model.prepare_inputs_for_generation(unit_context_input_ids, past_key_values=past_key_values)
-            outputs = model(**model_inputs, output_hidden_states=False)
-        elif args.model_category == 'seq2seq':
-            model_inputs = model.prepare_inputs_for_generation(history_decode_ids, **model_kwargs)
-            outputs = model(**model_inputs, output_hidden_states=False)
+        # 针对不同模型类型调整输入准备
+        if 'llama' in args.model_name_or_path.lower():
+            if past_key_values is not None:
+                # 对于已有历史的情况
+                model_inputs = {
+                    "input_ids": unit_context_input_ids[:, -1:],
+                    "attention_mask": attention_mask,
+                    "past_key_values": past_key_values,
+                    "use_cache": True
+                }
+            else:
+                # 首次运行的情况
+                model_inputs = {
+                    "input_ids": unit_context_input_ids,
+                    "attention_mask": attention_mask,
+                    "use_cache": True
+                }
         else:
-            raise ValueError("model category not supported")
+            try:
+                model_inputs = model.prepare_inputs_for_generation(
+                    unit_context_input_ids, 
+                    past_key_values=past_key_values,
+                    attention_mask=attention_mask,
+                    use_cache=True
+                )
+            except:
+                model_inputs = {
+                    "input_ids": unit_context_input_ids,
+                    "attention_mask": attention_mask,
+                    "past_key_values": past_key_values,
+                    "use_cache": True
+                }
 
+        outputs = model(**model_inputs, output_hidden_states=False)
         score = outputs.logits[:, -1:, :].clone().contiguous()
 
-        # 应用过滤，保持原有逻辑
         if args.assigned_weight >= 0:
             score = filter_logits_top_p(score, top_p=args.filter_top_p)
         else:
             score = filter_logits_top_p(score, top_p=args.filter_top_p_prior, negative_multiplier=True)
 
-        # 移除分布式相关代码，直接使用本地分数
         projected_logits = logits_sampling_projection(score, top_p=args.projection_top_p, one_hot_value=args.one_hot_value)
-        
-        # 计算token IDs
         simplex = torch.nn.functional.softmax(projected_logits, dim=-1)
         real_token_ids_list = torch.argmax(simplex, dim=-1).view(batch_size, unit_seq_len)
 
-        # 更新历史记录
-        if args.model_category == 'causal':
-            unit_context_input_ids = torch.cat((unit_context_input_ids, real_token_ids_list), dim=1)
+        # 更新状态
+        unit_context_input_ids = torch.cat((unit_context_input_ids, real_token_ids_list), dim=1)
+        attention_mask = torch.ones_like(unit_context_input_ids)
+        past_key_values = outputs.past_key_values
 
         if history_decode_ids is None:
             history_decode_ids = real_token_ids_list
         else:
             history_decode_ids = torch.cat((history_decode_ids, real_token_ids_list), dim=1)
 
-        # 更新past_key_values
-        if args.model_category == 'causal':
-            past_key_values = outputs.past_key_values
-        elif args.model_category == 'seq2seq':
-            model_kwargs["past_key_values"] = outputs.past_key_values
+        # EOS检查
+        if real_token_ids_list.size(0) == 1 and real_token_ids_list.size(1) == 1:
+            if real_token_ids_list[0][-1] == model.generation_config.eos_token_id:
+                break
 
-        # 保持原有的EOS检查
-        assert real_token_ids_list.size(0) == 1
-        assert real_token_ids_list.size(1) == 1
-        if real_token_ids_list[0][-1] == model.generation_config.eos_token_id:
-            break
-
-    # 处理输出
+    # 输出处理部分保持不变
+    context_sequences = None
     if args.context_size > 0:
         init_context_input_ids = batch_input_ids[:, :args.context_size].clone()
-        context_sequences = tokenizer.batch_decode(init_context_input_ids.detach().to('cpu'))
+        context_sequences = tokenizer.batch_decode(init_context_input_ids.detach().cpu())
     else:
         init_context_input_ids = None
-        context_sequences = None
 
-    sampled_sequences = tokenizer.batch_decode(history_decode_ids.clone().detach().to('cpu'), skip_special_tokens=True)
+    sampled_sequences = tokenizer.batch_decode(history_decode_ids.detach().cpu(), skip_special_tokens=True)
     logger.info(f"context: {context_sequences}")
     logger.info(f"sampled: {colored(str(sampled_sequences), 'red')}")
 
     return history_decode_ids, init_context_input_ids, None, sampled_sequences, context_sequences, None
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Finetune a transformers model on a Masked Language Modeling task")
@@ -633,17 +725,184 @@ def parse_args():
 def get_small_model_name(original_model_name):
     """将大模型映射到对应的小模型用于测试"""
     model_mapping = {
-        "huggyllama/llama-7b": "facebook/opt-125m",  # 7B -> 125M "facebook/opt-125m"
+        "huggyllama/llama-7b": "huggyllama/llama-7b",  # 7B -> 125M "facebook/opt-125m"
         "huggyllama/llama-13b": "facebook/opt-350m",  # 13B -> 350M "facebook/opt-350m"
         # 可以添加更多映射
     }
     return model_mapping.get(original_model_name, "facebook/opt-125m")  # 默认使用 opt-125m
 
 
-# adjusted main function on single gpu
+# # adjusted main function on single gpu
+# def main():
+#     args = parse_args()
+
+#     # 1. 基础设置
+#     logging.basicConfig(
+#         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+#         datefmt="%m/%d/%Y %H:%M:%S",
+#         level=logging.INFO,
+#     )
+#     logger = logging.getLogger(__name__)
+
+#     # 2. 设置环境变量和缓存路径
+#     cache_dir = "/apdcephfs_cq10/share_1567347/share_info/wendyzhang/.cache/huggingface"
+#     os.makedirs(cache_dir, exist_ok=True)
+#     os.environ['TRANSFORMERS_CACHE'] = cache_dir
+#     os.environ['HF_HOME'] = cache_dir
+
+#     # 3. 设置设备
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     if torch.cuda.is_available():
+#         torch.cuda.set_device(0)
+
+#     # 4. 设置随机种子
+#     if args.seed is not None:
+#         torch.manual_seed(args.seed)
+#         if torch.cuda.is_available():
+#             torch.cuda.manual_seed_all(args.seed)
+
+#     # 5. 读取输入文件
+#     args.file_mode = args.file_mode.split('|')
+#     assert args.file_mode[0] == "fin"
+#     assert os.path.exists(args.file_mode[1])
+#     fin_path = args.file_mode[1]
+#     fin_data = []
+#     with open(fin_path, 'r', encoding='utf-8') as f:
+#         for line in f:
+#             proc_line = line.strip()
+#             if proc_line:
+#                 fin_data.append(json.loads(proc_line))
+
+#     # 6. 获取模型名称并映射
+#     first_data = fin_data[0]
+#     original_model_name = first_data['assigned_model'].split('|')[0]
+#     args.model_name_or_path = get_small_model_name(original_model_name)
+#     logger.info(f"Original model: {original_model_name}")
+#     logger.info(f"Using small model for testing: {args.model_name_or_path}")
+
+#     try:
+#         # 7. 加载tokenizer
+#         logger.info("Loading tokenizer...")
+#         if 'opt' in args.model_name_or_path.lower():
+#             tokenizer = GPT2Tokenizer.from_pretrained(
+#                 args.model_name_or_path,
+#                 cache_dir=cache_dir,
+#                 use_auth_token="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"
+#             )
+#             tokenizer.pad_token = tokenizer.eos_token
+#         else:
+#             tokenizer = AutoTokenizer.from_pretrained(
+#                 args.model_name_or_path,
+#                 cache_dir=cache_dir,
+#                 use_fast=not args.use_slow_tokenizer,
+#                 use_auth_token="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"
+#             )
+#         logger.info("Tokenizer loaded successfully")
+
+#         # 8. 加载模型
+#         logger.info("Loading model...")
+#         if 'opt' in args.model_name_or_path.lower():
+#             model = OPTForCausalLM.from_pretrained(
+#                 args.model_name_or_path,
+#                 cache_dir=cache_dir,
+#                 torch_dtype=torch.float16,
+#                 use_auth_token="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"
+#             )
+#         else:
+#             model = AutoModelForCausalLM.from_pretrained(
+#                 args.model_name_or_path,
+#                 cache_dir=cache_dir,
+#                 torch_dtype=torch.float16,
+#                 use_auth_token="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"
+#             )
+        
+#         model = model.to(device)
+#         model.eval()
+#         logger.info("Model loaded successfully and moved to GPU")
+
+#         # 9. 设置模型参数
+#         args.model_category = 'causal'
+#         args.vocab_size = model.config.vocab_size
+#         args.hidden_size = model.config.hidden_size
+#         args.one_hot_value = 5.0
+#         args.tokenizer = tokenizer
+
+#         # 10. 处理生成
+#         export_list = []
+#         args.orig_decode_truncate_len = args.decode_truncate_len
+        
+#         with torch.no_grad():
+#             for _fd in tqdm(fin_data, desc="Processing inputs"):
+#                 try:
+#                     # 获取参数
+#                     args.assigned_weight = _fd.get('assigned_weight', 1.0)
+#                     args.filter_top_p = _fd.get('filter_p', getattr(args, 'filter_top_p', 1.0))
+#                     args.filter_top_p_prior = _fd.get('filter_p_prior', getattr(args, 'filter_top_p_prior', 1.0))
+
+#                     # 处理输入
+#                     ctx_field_name = 'context_string'
+#                     assert ctx_field_name in _fd
+                    
+#                     input_ids = torch.tensor(
+#                         tokenizer.encode(_fd[ctx_field_name], add_special_tokens=True),
+#                         dtype=torch.long
+#                     ).unsqueeze(0).to(device)
+                    
+#                     args.context_size = input_ids.size(1)
+#                     args.decode_truncate_len = args.orig_decode_truncate_len - args.context_size
+                    
+#                     if args.decode_truncate_len < 0:
+#                         logger.warning(f"Skipping long input {_fd['input_index']}")
+#                         continue
+
+#                     # 生成文本
+#                     with torch.cuda.amp.autocast():
+#                         history_decode_ids, _, _, sampled_sequences, _, _ = \
+#                             decode(args, input_ids, args.decode_depth, model, tokenizer)
+
+#                     # 保存结果
+#                     export_dict = {
+#                         'tokens': [history_decode_ids.tolist()[0]],
+#                         'string': [sampled_sequences[0]],
+#                         'input_index': _fd['input_index'],
+#                         'output_index': len(export_list),
+#                         'assigned_model': args.model_name_or_path,
+#                         'original_model': original_model_name,
+#                         'assigned_weight': _fd.get('assigned_weight', 1.0),
+#                         'assigned_process': 0
+#                     }
+#                     export_list.append(export_dict)
+#                     logger.info(f"Processed input {_fd['input_index']}")
+
+#                 except Exception as e:
+#                     logger.error(f"Error processing input {_fd['input_index']}: {str(e)}")
+#                     logger.error("Error details:", exc_info=True)
+#                     continue
+
+#         # 11. 保存结果
+#         output_dir = "/apdcephfs_cq10/share_1567347/share_info/wendyzhang/context-aware-decoding/output"
+#         os.makedirs(output_dir, exist_ok=True)
+#         base_filename = os.path.basename(fin_path)
+#         out_json_fn = f"{base_filename}.output_topp{args.projection_top_p}_genlen{args.decode_depth}.jsonl"
+#         out_json_fn = os.path.join(output_dir,out_json_fn)
+
+
+#         with open(out_json_fn, mode="w") as f_out:
+#             for export in export_list:
+#                 f_out.write(json.dumps(export))
+#                 f_out.write("\n")
+
+#         logger.info(f"Successfully processed {len(export_list)} out of {len(fin_data)} inputs")
+
+#     except Exception as e:
+#         logger.error(f"Fatal error: {str(e)}")
+#         logger.error("Error details:", exc_info=True)
+#         raise
+
+# adjusted for llama
 def main():
     args = parse_args()
-
+    
     # 1. 基础设置
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -652,109 +911,132 @@ def main():
     )
     logger = logging.getLogger(__name__)
 
-    # 2. 设置环境变量和缓存路径
+    # 2. 环境设置
     cache_dir = "/apdcephfs_cq10/share_1567347/share_info/wendyzhang/.cache/huggingface"
     os.makedirs(cache_dir, exist_ok=True)
-    os.environ['TRANSFORMERS_CACHE'] = cache_dir
-    os.environ['HF_HOME'] = cache_dir
+    os.environ.update({
+        'TRANSFORMERS_CACHE': cache_dir,
+        'HF_HOME': cache_dir
+    })
 
-    # 3. 设置设备
+    # 3. 设备和随机种子
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if torch.cuda.is_available():
         torch.cuda.set_device(0)
-
-    # 4. 设置随机种子
+    
     if args.seed is not None:
         torch.manual_seed(args.seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(args.seed)
+        torch.cuda.manual_seed_all(args.seed) if torch.cuda.is_available() else None
 
-    # 5. 读取输入文件
+    # 4. 读取输入数据
     args.file_mode = args.file_mode.split('|')
-    assert args.file_mode[0] == "fin"
-    assert os.path.exists(args.file_mode[1])
-    fin_path = args.file_mode[1]
-    fin_data = []
-    with open(fin_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            proc_line = line.strip()
-            if proc_line:
-                fin_data.append(json.loads(proc_line))
+    assert args.file_mode[0] == "fin" and os.path.exists(args.file_mode[1])
+    
+    with open(args.file_mode[1], 'r', encoding='utf-8') as f:
+        fin_data = [json.loads(line.strip()) for line in f if line.strip()]
 
-    # 6. 获取模型名称并映射
+    # 5. 模型配置
     first_data = fin_data[0]
     original_model_name = first_data['assigned_model'].split('|')[0]
     args.model_name_or_path = get_small_model_name(original_model_name)
+    args.is_llama = 'llama' in args.model_name_or_path.lower()  # 添加模型类型检查
     logger.info(f"Original model: {original_model_name}")
-    logger.info(f"Using small model for testing: {args.model_name_or_path}")
+    logger.info(f"Using small model: {args.model_name_or_path}")
+    logger.info(f"Is LLaMA model: {args.is_llama}")
 
     try:
-        # 7. 加载tokenizer
-        logger.info("Loading tokenizer...")
-        if 'opt' in args.model_name_or_path.lower():
+        # 6. 加载tokenizer和model
+        model_loading_kwargs = {
+            "cache_dir": cache_dir,
+            "use_auth_token": "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"
+        }
+
+        # 根据模型类型选择tokenizer
+        if args.is_llama:
+            tokenizer = AutoTokenizer.from_pretrained(
+                args.model_name_or_path,
+                use_fast=True,
+                **model_loading_kwargs
+            )
+        elif 'opt' in args.model_name_or_path.lower():
             tokenizer = GPT2Tokenizer.from_pretrained(
                 args.model_name_or_path,
-                cache_dir=cache_dir,
-                use_auth_token="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"
+                **model_loading_kwargs
             )
             tokenizer.pad_token = tokenizer.eos_token
         else:
             tokenizer = AutoTokenizer.from_pretrained(
                 args.model_name_or_path,
-                cache_dir=cache_dir,
-                use_fast=not args.use_slow_tokenizer,
-                use_auth_token="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"
+                use_fast=not getattr(args, 'use_slow_tokenizer', False),
+                **model_loading_kwargs
             )
-        logger.info("Tokenizer loaded successfully")
+            if not tokenizer.pad_token:
+                tokenizer.pad_token = tokenizer.eos_token
 
-        # 8. 加载模型
-        logger.info("Loading model...")
-        if 'opt' in args.model_name_or_path.lower():
+        # 根据模型类型加载模型
+        if args.is_llama:
+            model = AutoModelForCausalLM.from_pretrained(
+                args.model_name_or_path,
+                torch_dtype=torch.float16,
+                device_map='auto',  # 添加设备映射
+                **model_loading_kwargs
+            )
+        elif 'opt' in args.model_name_or_path.lower():
             model = OPTForCausalLM.from_pretrained(
                 args.model_name_or_path,
-                cache_dir=cache_dir,
                 torch_dtype=torch.float16,
-                use_auth_token="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"
+                **model_loading_kwargs
             )
         else:
             model = AutoModelForCausalLM.from_pretrained(
                 args.model_name_or_path,
-                cache_dir=cache_dir,
                 torch_dtype=torch.float16,
-                use_auth_token="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"
+                **model_loading_kwargs
             )
-        
+
         model = model.to(device)
         model.eval()
-        logger.info("Model loaded successfully and moved to GPU")
 
-        # 9. 设置模型参数
-        args.model_category = 'causal'
-        args.vocab_size = model.config.vocab_size
-        args.hidden_size = model.config.hidden_size
-        args.one_hot_value = 5.0
-        args.tokenizer = tokenizer
+        # 7. 模型参数设置
+        args_params = {
+            'model_category': 'causal',
+            'vocab_size': model.config.vocab_size,
+            'hidden_size': model.config.hidden_size,
+            'one_hot_value': 5.0,
+            'tokenizer': tokenizer,
+            'max_position_embeddings': getattr(model.config, 'max_position_embeddings', 2048)
+        }
+        for param_name, param_value in args_params.items():
+            setattr(args, param_name, param_value)
 
-        # 10. 处理生成
+        # 8. 生成处理
         export_list = []
         args.orig_decode_truncate_len = args.decode_truncate_len
         
         with torch.no_grad():
             for _fd in tqdm(fin_data, desc="Processing inputs"):
                 try:
-                    # 获取参数
-                    args.assigned_weight = _fd.get('assigned_weight', 1.0)
-                    args.filter_top_p = _fd.get('filter_p', getattr(args, 'filter_top_p', 1.0))
-                    args.filter_top_p_prior = _fd.get('filter_p_prior', getattr(args, 'filter_top_p_prior', 1.0))
+                    # 更新参数
+                    for param_name, default_value in [
+                        ('assigned_weight', 1.0),
+                        ('filter_top_p', getattr(args, 'filter_top_p', 1.0)),
+                        ('filter_top_p_prior', getattr(args, 'filter_top_p_prior', 1.0))
+                    ]:
+                        setattr(args, param_name, _fd.get(param_name.replace('filter_', 'filter_p'), default_value))
 
                     # 处理输入
-                    ctx_field_name = 'context_string'
-                    assert ctx_field_name in _fd
-                    
-                    input_ids = torch.tensor(
-                        tokenizer.encode(_fd[ctx_field_name], add_special_tokens=True),
-                        dtype=torch.long
-                    ).unsqueeze(0).to(device)
+                    input_text = _fd.get('context_string')
+                    if not input_text:
+                        continue
+
+                    # 添加模型特定的输入处理
+                    if args.is_llama:
+                        tokens = tokenizer.encode(input_text, add_special_tokens=True, truncation=True, 
+                                               max_length=args.max_position_embeddings)
+                    else:
+                        tokens = tokenizer.encode(input_text, add_special_tokens=True)
+
+                    input_ids = torch.tensor(tokens, dtype=torch.long).unsqueeze(0).to(device)
                     
                     args.context_size = input_ids.size(1)
                     args.decode_truncate_len = args.orig_decode_truncate_len - args.context_size
@@ -769,7 +1051,7 @@ def main():
                             decode(args, input_ids, args.decode_depth, model, tokenizer)
 
                     # 保存结果
-                    export_dict = {
+                    export_list.append({
                         'tokens': [history_decode_ids.tolist()[0]],
                         'string': [sampled_sequences[0]],
                         'input_index': _fd['input_index'],
@@ -778,27 +1060,24 @@ def main():
                         'original_model': original_model_name,
                         'assigned_weight': _fd.get('assigned_weight', 1.0),
                         'assigned_process': 0
-                    }
-                    export_list.append(export_dict)
-                    logger.info(f"Processed input {_fd['input_index']}")
+                    })
 
                 except Exception as e:
                     logger.error(f"Error processing input {_fd['input_index']}: {str(e)}")
                     logger.error("Error details:", exc_info=True)
                     continue
 
-        # 11. 保存结果
+        # 9. 保存结果
         output_dir = "/apdcephfs_cq10/share_1567347/share_info/wendyzhang/context-aware-decoding/output"
         os.makedirs(output_dir, exist_ok=True)
-        base_filename = os.path.basename(fin_path)
-        out_json_fn = f"{base_filename}.output_topp{args.projection_top_p}_genlen{args.decode_depth}.jsonl"
-        out_json_fn = os.path.join(output_dir,out_json_fn)
+        out_json_fn = os.path.join(
+            output_dir,
+            f"{os.path.basename(args.file_mode[1])}.output_topp{args.projection_top_p}_genlen{args.decode_depth}.jsonl"
+        )
 
-
-        with open(out_json_fn, mode="w") as f_out:
+        with open(out_json_fn, 'w') as f_out:
             for export in export_list:
-                f_out.write(json.dumps(export))
-                f_out.write("\n")
+                f_out.write(json.dumps(export) + "\n")
 
         logger.info(f"Successfully processed {len(export_list)} out of {len(fin_data)} inputs")
 
