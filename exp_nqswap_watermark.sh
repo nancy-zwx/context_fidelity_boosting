@@ -64,8 +64,8 @@ do
     echo "------------------Processing Boost Delta: ${BOOST_DELTA}--------------------"
     WEIGHT="1_0"
     TESTFILE="fin|${FN_PREFIX}_${WEIGHT}.jsonl"
-    OUTPUT_FILE="${FN_PREFIX}_${WEIGHT}.jsonl.output_topp${TOPP}_genlen${GENLEN}_boost${BOOST_DELTA}.jsonl"
-    OUTPUT_FILE="${OUTPUT_DIR}/${OUTPUT_FILE}"
+    BASE_OUTPUT_FILE="$(basename ${FN_PREFIX}_${WEIGHT}.jsonl).output_topp${TOPP}_genlen${GENLEN}_boost${BOOST_DELTA}.jsonl"
+    OUTPUT_FILE="${OUTPUT_DIR}/${BASE_OUTPUT_FILE}"
     
     # 运行decode
     echo "Running decode with boost delta ${BOOST_DELTA}..."

@@ -34,3 +34,6 @@ echo -e "\nGPU状态："
 nvidia-smi
 
 # sh /apdcephfs_cq10/share_1567347/share_info/wendyzhang/gpu/kill.sh
+
+#  ps aux | grep python
+#  kill -9 <进程ID>

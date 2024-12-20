@@ -1076,7 +1076,7 @@ def main():
             output_dir,
             f"{os.path.basename(args.file_mode[1])}.output_topp{args.projection_top_p}_genlen{args.decode_depth}.jsonl"
         )
-
+        os.makedirs(os.path.dirname(out_json_fn), exist_ok=True)
         with open(out_json_fn, 'w') as f_out:
             for export in export_list:
                 f_out.write(json.dumps(export) + "\n")

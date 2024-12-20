@@ -55,7 +55,7 @@ export CUDA_VISIBLE_DEVICES=0
 GLOBALLEN="2048"
 MAXCTXLEN="2038"
 GENLEN="10"
-FN_PREFIX="/apdcephfs_cq10/share_1567347/share_info/wendyzhang/cfb/eval/nqswap_example_input/nqswap"
+FN_PREFIX="nqswap"
 TOPP="0.0"
 
 # results dir
@@ -71,8 +71,8 @@ do
     echo "------------------Processing Weight: ${WEIGHT}--------------------"
     
     TESTFILE="fin|${FN_PREFIX}_${WEIGHT}.jsonl"
-    OUTPUT_FILE="${FN_PREFIX}_${WEIGHT}.jsonl.output_topp${TOPP}_genlen${GENLEN}.jsonl"
-    OUTPUT_FILE="${OUTPUT_DIR}/${OUTPUT_FILE}"
+    BASE_OUTPUT_FILE="$(basename ${FN_PREFIX}_${WEIGHT}.jsonl).output_topp${TOPP}_genlen${GENLEN}.jsonl"
+    OUTPUT_FILE="${OUTPUT_DIR}/${BASE_OUTPUT_FILE}"
     
     # 运行decode
     echo "Running decode for weight ${WEIGHT}..."

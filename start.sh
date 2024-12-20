@@ -398,15 +398,16 @@ done
 ## result cnndm, llama-7b:
 ## weight 1_0(standard): Average fact score: 0.7494 ROUGE results: {'rouge1': 0.2792295751583305, 'rouge2': 0.08255960177635246, 'rougeL': 0.1862742341199251}
 ## weight 1.5_-0.5(cad): Average fact score: 0.5609 ROUGE results: {'rouge1': 0.20336594785387901, 'rouge2': 0.08294773873759222, 'rougeL': 0.1384313522025869}
-## boost delta 1: 
-## boost delta 2: 
-## boost delta 5: 
-## boost delta 10: 
+## boost delta 1: Average fact score: 0.8217 ROUGE results: {'rouge1': 0.3071723328789839, 'rouge2': 0.11564268754957231, 'rougeL': 0.2124447002523494}
+## boost delta 2: Average fact score: 0.8341 ROUGE results: {'rouge1': 0.30904719867632435, 'rouge2': 0.12823625599872293, 'rougeL': 0.22307315122163474}
+## boost delta 5: Average fact score: 0.7869 ROUGE results: {'rouge1': 0.2726366818004805, 'rouge2': 0.1285909347252062, 'rougeL': 0.2058632478875582}
+## boost delta 10: Average fact score: 0.8256 ROUGE results: {'rouge1': 0.2664584670301244, 'rouge2': 0.1263337219573434, 'rougeL': 0.2020662517454624}
 
 ## result nqswap, llama-7b:
-## weight 1_0(standard): 
-## weight 1.5_-0.5(cad): 
-## boost delta 1: 
-## boost delta 2: 
-## boost delta 5: 
+## weight 1_0(standard): Average fact score: 0.4303 ROUGE results: {'rouge1': 0.03167569811508258, 'rouge2': 0.017389738026545233, 'rougeL': 0.03167569811508258}
+## weight 1.5_-0.5(cad): Average fact score: 0.2953 ROUGE results: {'rouge1': 0.03317140255160607, 'rouge2': 0.01833097155549911, 'rougeL': 0.03317140255160607}
+## boost delta 1: Average fact score: 0.4928 ROUGE results: {'rouge1': 0.0370607401134112, 'rouge2': 0.02070643884105663, 'rougeL': 0.0370607401134112}
+## boost delta 2: Average fact score: 0.5317 ROUGE results: {'rouge1': 0.03823784437062757, 'rouge2': 0.020980272124308134, 'rougeL': 0.03823784437062757}
+## boost delta 5: Average fact score: 0.5989 ROUGE results: {'rouge1': 0.04069566481419445, 'rouge2': 0.022400766136700122, 'rougeL': 0.04069566481419445}
 ## boost delta 10: 
+

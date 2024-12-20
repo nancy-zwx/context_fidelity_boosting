@@ -751,6 +751,7 @@ def main():
         base_filename = os.path.basename(fin_path)
         out_json_fn = f"{base_filename}.output_topp{args.projection_top_p}_genlen{args.decode_depth}_boost{args.context_boost_delta}.jsonl"
         out_json_fn = os.path.join(output_dir,out_json_fn)
+        os.makedirs(os.path.dirname(out_json_fn), exist_ok=True)
         with open(out_json_fn, mode="w") as f_out:
             for export in export_list:
                 f_out.write(json.dumps(export))

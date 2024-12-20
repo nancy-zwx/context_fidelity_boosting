@@ -74,8 +74,8 @@ do
     echo "------------------Processing Weight: ${WEIGHT}--------------------"
     
     TESTFILE="fin|${FN_PREFIX}_${WEIGHT}.jsonl"
-    OUTPUT_FILE="${FN_PREFIX}_${WEIGHT}.jsonl.output_topp${TOPP}_genlen${GENLEN}.jsonl"
-    OUTPUT_FILE="${OUTPUT_DIR}/${OUTPUT_FILE}"
+    BASE_OUTPUT_FILE="$(basename ${FN_PREFIX}_${WEIGHT}.jsonl).output_topp${TOPP}_genlen${GENLEN}.jsonl"
+    OUTPUT_FILE="${OUTPUT_DIR}/${BASE_OUTPUT_FILE}"
 
 
     # 运行decode
