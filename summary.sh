@@ -387,14 +387,6 @@ done
 ## boost delta 5: Average fact score: 0.6172, ROUGE results: {'rouge1': 0.031176000825806273, 'rouge2': 0.015783169180890136, 'rougeL': 0.031176000825806273}
 ## boost delta 10: Average fact score: 0.4133, ROUGE results: {'rouge1': 0.04030921318271373, 'rouge2': 0.02056905189402463, 'rougeL': 0.04030921318271373}
 
-## result nqswap, opt-350m:
-## weight 1_0(standard): 
-## weight 2_-1(cad): 
-## boost delta 1: 
-## boost delta 2: 
-## boost delta 5: 
-## boost delta 10: 
-
 ## result cnndm, llama-7b:
 ## weight 1_0(standard): Average fact score: 0.7494 ROUGE results: {'rouge1': 0.2792295751583305, 'rouge2': 0.08255960177635246, 'rougeL': 0.1862742341199251}
 ## weight 1.5_-0.5(cad): Average fact score: 0.5609 ROUGE results: {'rouge1': 0.20336594785387901, 'rouge2': 0.08294773873759222, 'rougeL': 0.1384313522025869}

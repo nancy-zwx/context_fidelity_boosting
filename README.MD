@@ -1,27 +1,12 @@
-## Context-aware decoding
-This repository provides an original implementation of [Trusting Your Evidence: Hallucinate Less with Context-aware Decoding](https://arxiv.org/pdf/2305.14739.pdf) by *Weijia Shi, *Xiaochuang Han, Mike Lewis, Yulia Tsvetkov, Luke Zettlemoyer, Scott Yih.
+## Context Fidelity Boosting (CFB)
+
+A novel approach for enhancing context fidelity in large language models through dynamic context optimization and boosting techniques.
 
 ### Overview
 
-Context-aware decoding is a simple inference-time method to encourage language models to focus more on given contexts. 
-
-With regular decoding, we sample tokens at each position from an autoregressive language model with:
-<!-- ![eq1](image/no_cad.png =250x) -->
-<img src="image/no_cad.png" width="250">
-
-Context-aware decoding samples tokens at each position with: 
-<!-- ![eq1](image/cad.png =250x) -->
-<img src="image/cad.png" width="480">
-
-Here $\boldsymbol{c}$ denotes the context that the model should focus more on. Please see more details in [our paper](https://arxiv.org/abs/2305.14739). Here is an figure illustrating the difference between regular decoding and context-aware decoding.
-<!-- ![decoding](image/main.png =250x) -->
-<img src="image/main.png" width="500">
-
-
-While context-aware decoding is based on the setup where one language model is decoded contrastively with different input contexts, *our code generally supports collaborative or contrastive decoding with multiple language models with different input contexts*. You can easily customize the inference setup with your own input `jsonl` file. 
+Context Fidelity Boosting (CFB) is a framework designed to improve the contextual understanding and response accuracy of large language models. It implements dynamic context optimization strategies and boosting techniques to enhance model performance in context-sensitive tasks.
 
 ### Input format
-Below is an example input to our system (from NQ-Swap). 
 ```json
 {
     "input_index": 0, // instances that decode together should have the same input_index
@@ -42,15 +27,20 @@ Below is an example input to our system (from NQ-Swap).
 ```
 
 ### Running context-aware decoding on CNN-DM and NQ-Swap
-Run `bash exp_cnndm.sh` or `bash exp_nqswap.sh`. Both scripts call `run_group_decode_fileio.sh` which subsequently calls `group_decode_fileio.py`. The output will be saved in the same directory as the input files. 
+for experiments on CNN_DM:
+run `exp_cnndm.sh` for standard decoding or CAD baselines, which subsequently calls `group_decode_fileio.py`.
+run `exp_cnndm_watermark.sh` for context fidelity boosting where delta is fixed, which subsequently calls `group_decode_watermark_fileio.py`.
+run `exp_cnndm_adaptive.sh` for context fidelity boosting where delta is adaptive, which subsequently calls `group_decode_adaptive_fileio.py`.
+
+experiments on NQ-Swap is the same.
+The output will be saved in `output`. 
 
 The conda environment we used can be found in `environment.yml`. The main packages used are `pytorch`, `transformers`, and `accelerate`. 
 
 ### Evaluation
 After generating the prediction data, you can run the evaluation by running the following script and compare with the gold data.  
 ```bash
-PRED_PATH=./eval/cnndm_example_input/cnndm_1.5_-0.5.jsonl.output_topp0.9_genlen100.jsonl 
+PRED_PATH=./output/llama7b/cnndm_1_0.jsonl.output_topp0.9_genlen100_boost10.0.jsonl
 GOLD_DATA_PATH=./eval/cnndm_example_input/cnndm_1_0.jsonl
 python eval/evaluate_summary.py --pred_path $PRED_PATH --data_path $GOLD_DATA_PATH
 ```
-We provide our output for CNN-DM using standard decoding (`cnndm_1_0.jsonl.output_topp0.9_genlen100`) and context-aware decoding (`cnndm_1.5_-0.5.jsonl.output_topp0.9_genlen100.jsonl`) in `eval/cnndm_example_input/`.
