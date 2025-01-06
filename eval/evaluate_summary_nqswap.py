@@ -19,8 +19,7 @@ login(token="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")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def load_models_with_cache(cache_dir="/apdcephfs_cq10/share_1567347/share_info/wendyzhang/.cache/huggingface"):
-    """使用本地缓存加载模型"""
+def load_models_with_cache(cache_dir=".cache/huggingface"):
     os.makedirs(cache_dir, exist_ok=True)
     
     try:
@@ -56,7 +55,6 @@ def load_models_with_cache(cache_dir="/apdcephfs_cq10/share_1567347/share_info/w
         return None, None
 
 def evaluate_qa(index2ex, eval_file, tokenizer, factkb):
-    """评估函数"""
     if tokenizer is None or factkb is None:
         logger.error("Models not loaded properly")
         return

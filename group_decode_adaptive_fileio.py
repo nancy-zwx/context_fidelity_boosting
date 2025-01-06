@@ -24,7 +24,7 @@ from transformers import (
     OPTForCausalLM
 )
 import torch
-import torch.nn.functional as F  # 新添加的
+import torch.nn.functional as F  
 from tqdm import tqdm
 
 
@@ -68,11 +68,9 @@ def filter_logits_top_p(logits, top_p, negative_multiplier=False):
     return filtered_logits
 
 def get_context_token_ids(context_input_ids):
-    """获取context中的unique token ids"""
     return torch.unique(context_input_ids)
 
 def create_boost_mask(logits, context_tokens, delta):
-    """创建boost mask用于增强context tokens的权重"""
     device = logits.device
     if not torch.is_tensor(delta):
         delta = torch.tensor(delta, device=device)
@@ -83,7 +81,7 @@ def create_boost_mask(logits, context_tokens, delta):
 
 
 def compute_jsd(logits_with_context, logits_without_context):
-    """计算Jensen-Shannon散度"""
+    """calculate Jensen-Shannon divergence"""
     p = F.softmax(logits_with_context, dim=-1)
     q = F.softmax(logits_without_context, dim=-1)
     m = 0.5 * (p + q)
@@ -93,16 +91,15 @@ def compute_jsd(logits_with_context, logits_without_context):
     return jsd
 
 def compute_entropy(logits):
-    """计算条件熵"""
+    """calculate entropy"""
     probs = F.softmax(logits, dim=-1)
     entropy = -torch.sum(probs * torch.log(probs + 1e-10), dim=-1)
     return entropy
 
 def get_adaptive_delta(logits_with_context, logits_without_context, args):
-    """根据JSD动态确定boost delta值"""
+    """get adaptive boost delta"""
     jsd = compute_jsd(logits_with_context, logits_without_context)
     
-    # 将JSD映射到delta范围
     args.min_delta = 1.0
     args.max_delta = 10.0
     delta = args.min_delta + (args.max_delta - args.min_delta) * jsd
@@ -110,13 +107,10 @@ def get_adaptive_delta(logits_with_context, logits_without_context, args):
     return delta
 
 def get_adaptive_temperature(logits, args):
-    """根据条件熵动态确定温度"""
+    """get adaptive temperature"""
     entropy = compute_entropy(logits)
-    
-    # 将熵映射到温度范围
     temp = args.min_temp + args.base_temp * entropy
     
-    # 确保返回标量值
     if torch.is_tensor(temp):
         temp = temp.item()
     
@@ -129,7 +123,7 @@ def decode(args, batch_input_ids, dec_depth, model, tokenizer):
     assert (args.max_seq_length - args.context_size - args.decode_truncate_len) % dec_depth == 0
     unit_seq_len = int((args.max_seq_length - args.context_size - args.decode_truncate_len) / dec_depth)
 
-    # 获取context input和question input
+    # get context input和question input
     if args.context_size > 0:
         unit_context_input_ids = batch_input_ids[:, :args.context_size].clone()
         question_input_ids = batch_input_ids[:, args.context_size:].clone()
@@ -140,7 +134,6 @@ def decode(args, batch_input_ids, dec_depth, model, tokenizer):
     history_decode_ids = None
     past_key_values = None
 
-    # 初始化统计信息字典
     stats = {
         'jsd_values': [],
         'entropy_values': [],
@@ -177,7 +170,7 @@ def decode(args, batch_input_ids, dec_depth, model, tokenizer):
                         "use_cache": True
                     }
                 
-                # 修改这部分以保持维度一致
+                # dimension consistent
                 curr_token = unit_context_input_ids[:, -1:] if past_key_values is not None else unit_context_input_ids
                 model_inputs_without_context = {
                     "input_ids": curr_token,
@@ -212,7 +205,7 @@ def decode(args, batch_input_ids, dec_depth, model, tokenizer):
         logits_with_context = outputs_with_context.logits[:, -1:, :].clone().contiguous()
         logits_without_context = outputs_without_context.logits[:, -1:, :].clone().contiguous()
 
-        # 获取自适应参数
+        # get adaptive parameters
         if args.adaptive_mode in ["delta_only", "both"]:
             delta = get_adaptive_delta(logits_with_context, logits_without_context, args)
             if torch.is_tensor(delta):
@@ -225,36 +218,31 @@ def decode(args, batch_input_ids, dec_depth, model, tokenizer):
         else:
             temperature = args.fixed_temp
 
-        # 记录统计值
+        # record
         if args.stats_logging:
             stats['jsd_values'].append(compute_jsd(logits_with_context, logits_without_context).item())
             stats['entropy_values'].append(compute_entropy(logits_with_context).item())
-            stats['delta_values'].append(float(delta))  # 确保是Python float
-            stats['temperature_values'].append(float(temperature))  # 确保是Python float
+            stats['delta_values'].append(float(delta))  
+            stats['temperature_values'].append(float(temperature))  
 
-        # 将标量转换为tensor用于计算
         delta_tensor = torch.tensor(delta, device=logits_with_context.device)
         temperature_tensor = torch.tensor(temperature, device=logits_with_context.device)
 
-        # 创建并应用boost mask和temperature
+        # boost mask and temperature
         boost_mask = create_boost_mask(logits_with_context, context_tokens, delta_tensor)
         enhanced_logits = logits_with_context + boost_mask
         enhanced_logits = enhanced_logits / temperature_tensor
 
-        # 应用过滤
         if args.assigned_weight >= 0:
             score = filter_logits_top_p(enhanced_logits, top_p=args.filter_top_p)
         else:
             score = filter_logits_top_p(enhanced_logits, top_p=args.filter_top_p_prior, negative_multiplier=True)
 
-        # 采样
         projected_logits = logits_sampling_projection(score, top_p=args.projection_top_p, one_hot_value=args.one_hot_value)
         
-        # 计算token IDs
         simplex = torch.nn.functional.softmax(projected_logits, dim=-1)
         real_token_ids_list = torch.argmax(simplex, dim=-1).view(batch_size, unit_seq_len)
 
-        # 更新历史
         if args.model_category == 'causal':
             unit_context_input_ids = torch.cat((unit_context_input_ids, real_token_ids_list), dim=1)
             question_input_ids = torch.cat((question_input_ids, real_token_ids_list), dim=1)
@@ -269,11 +257,10 @@ def decode(args, batch_input_ids, dec_depth, model, tokenizer):
         elif args.model_category == 'seq2seq':
             model_kwargs["past_key_values"] = outputs_with_context.past_key_values
 
-        # 检查是否生成结束
         if real_token_ids_list[0][-1] == model.generation_config.eos_token_id:
             break
 
-    # 计算平均统计值
+    # compute average
     avg_stats = {
         'avg_jsd': sum(stats['jsd_values']) / len(stats['jsd_values']),
         'avg_entropy': sum(stats['entropy_values']) / len(stats['entropy_values']),
@@ -281,7 +268,7 @@ def decode(args, batch_input_ids, dec_depth, model, tokenizer):
         'avg_temperature': sum(stats['temperature_values']) / len(stats['temperature_values'])
     }
 
-    # 处理输出
+    # output
     if args.context_size > 0:
         init_context_input_ids = batch_input_ids[:, :args.context_size].clone()
         context_sequences = tokenizer.batch_decode(init_context_input_ids.detach().to('cpu'))
@@ -299,7 +286,6 @@ def decode(args, batch_input_ids, dec_depth, model, tokenizer):
 def parse_args():
     parser = argparse.ArgumentParser(description="Finetune a transformers model on a Masked Language Modeling task")
 
-    # 基础模型参数
     parser.add_argument(
         "--model_name_or_path",
         type=str,
@@ -355,7 +341,6 @@ def parse_args():
         help="The maximum total input sequence length after tokenization. Sequences longer than this will be truncated.",
     )
     
-    # 文件和训练模式参数
     parser.add_argument(
         "--init_blank_language_model", 
         action="store_true",
@@ -374,7 +359,7 @@ def parse_args():
         help="Training mode configuration"
     )
     
-    # 解码相关参数
+    # decode parameters
     parser.add_argument(
         "--decode_truncate_len", 
         type=int, 
@@ -406,7 +391,6 @@ def parse_args():
         help="Top-p for prior filtering"
     )
 
-    # 模型推理参数
     parser.add_argument(
         "--big_model_inference", 
         type=str, 
@@ -414,7 +398,7 @@ def parse_args():
         help="Whether to use big model inference mode"
     )
 
-    # 自适应boost相关参数(新添加)
+    # adaptive related boost parameters
     parser.add_argument(
         "--min_delta",
         type=float,
@@ -476,7 +460,7 @@ def parse_args():
         help="Whether to log detailed statistics during generation"
     )
 
-    # 输出配置参数(新添加)
+    # output parameters
     parser.add_argument(
         "--output_stats",
         action="store_true",
@@ -501,18 +485,15 @@ def parse_args():
     return args
 
 def get_small_model_name(original_model_name):
-    """将大模型映射到对应的小模型用于测试"""
-    model_mapping = {
-        "huggyllama/llama-7b": "huggyllama/llama-7b",  # 7B -> 125M "facebook/opt-125m"
-        "huggyllama/llama-13b": "facebook/opt-350m",  # 13B -> 350M "facebook/opt-350m"
-        # 可以添加更多映射
+    """map large models to smaller ones for test"""
+    model_mapping = {  
+        "huggyllama/llama-13b": "facebook/opt-350m",  
     }
-    return model_mapping.get(original_model_name, "facebook/opt-125m")  # 默认使用 opt-125m
+    return model_mapping.get(original_model_name, "huggyllama/llama-7b")  
 
 def main():
     args = parse_args()
 
-    # 参数验证
     if args.adaptive_mode not in ["delta_only", "temp_only", "both", "none"]:
         raise ValueError(f"Invalid adaptive_mode: {args.adaptive_mode}")
         
@@ -672,7 +653,7 @@ def main():
                     logger.error("Error details:", exc_info=True)
                     continue
 
-        output_dir = "/apdcephfs_cq10/share_1567347/share_info/wendyzhang/cfb/output/llama7b"
+        output_dir = "./output/llama7b"
         os.makedirs(output_dir, exist_ok=True)
         base_filename = os.path.basename(fin_path)
         out_json_fn = f"{base_filename}.output_topp{args.projection_top_p}_genlen{args.decode_depth}_adaptive.jsonl"

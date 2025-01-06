@@ -1,30 +1,25 @@
 #!/bin/bash
 
-# 环境变量设置
-hf_cache="/apdcephfs_cq10/share_1567347/share_info/wendyzhang/.cache/huggingface"
+hf_cache=".cache/huggingface"
 mkdir -p ${hf_cache}
 export TRANSFORMERS_CACHE="${hf_cache}"
 export HF_HOME="${hf_cache}"
-
-# 设置CUDA设备
 export CUDA_VISIBLE_DEVICES=0
 
-################### self cluster gpu ###################
-
-# 基础参数
+# fix parameters
 GLOBALLEN="2048"
 MAXCTXLEN="1948"
 GENLEN="100"
 TOPP="0.9"
-FN_PREFIX="/apdcephfs_cq10/share_1567347/share_info/wendyzhang/cfb/eval/cnndm_example_input/cnndm"
+FN_PREFIX="./eval/cnndm_example_input/cnndm"
 
-# 目录设置
-RESULTS_DIR="/apdcephfs_cq10/share_1567347/share_info/wendyzhang/cfb/results/llama7b_adaptive"
-OUTPUT_DIR="/apdcephfs_cq10/share_1567347/share_info/wendyzhang/cfb/output/llama7b_adaptive"
+# dir
+RESULTS_DIR="./results/llama7b"
+OUTPUT_DIR="./output/llama7b"
 mkdir -p ${RESULTS_DIR}
 mkdir -p ${OUTPUT_DIR}
 
-# 自适应参数配置
+# adaptive parameters
 ADAPTIVE_MODES=("delta_only" "temp_only" "both")
 MIN_DELTAS=("1.0")
 MAX_DELTAS=("10.0")
@@ -51,9 +46,9 @@ do
                     BASE_OUTPUT_FILE="$(basename ${FN_PREFIX}_${WEIGHT}.jsonl).output_topp${TOPP}_genlen${GENLEN}_adaptive_${MODE}.jsonl"
                     OUTPUT_FILE="${OUTPUT_DIR}/${BASE_OUTPUT_FILE}"
                     
-                    # 运行decode
+                    # run decode
                     echo "Running decode with adaptive mode ${MODE}..."
-                    python /apdcephfs_cq10/share_1567347/share_info/wendyzhang/cfb/group_decode_adaptive_fileio.py \
+                    python group_decode_adaptive_fileio.py \
                         --max_seq_length ${GLOBALLEN} \
                         --model_name_or_path dummy \
                         --seed 2023 \
@@ -71,11 +66,11 @@ do
                         --output_stats \
                         --stats_logging
                     
-                    # 检查decode是否成功
+                    # check if succeed
                     if [ $? -eq 0 ]; then
                         echo "Decode completed successfully for mode ${MODE}"
                         
-                        # 运行evaluate
+                        # run evaluate
                         echo "Running evaluate for mode ${MODE}..."
                         python /apdcephfs_cq10/share_1567347/share_info/wendyzhang/cfb/eval/evaluate_summary.py \
                             --pred_path $OUTPUT_FILE \
@@ -98,7 +93,7 @@ do
     done
 done
 
-# 打印结果
+# results
 echo "----------------Final Results----------------"
 for MODE in "${ADAPTIVE_MODES[@]}"
 do
@@ -110,13 +105,3 @@ do
         echo "No results found for mode ${MODE}"
     fi
 done
-
-# 生成统计报告
-echo "Generating statistics report..."
-python /apdcephfs_cq10/share_1567347/share_info/wendyzhang/cfb/analysis/generate_stats_report.py \
-    --input_dir ${OUTPUT_DIR} \
-    --output_file "${RESULTS_DIR}/adaptive_statistics_report.json"
-
-echo "Experiment completed!"
-
-# sh /apdcephfs_cq10/share_1567347/share_info/wendyzhang/cfb/exp_cnndm_adaptive.sh

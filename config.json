@@ -1,9 +1,0 @@
-{
-    "Token": "8joxfK6wB038jC8oLWUKfw",
-    "business_flag": "AILab_Game_Report_PaaS",
-    "model_local_file_path": "/apdcephfs_cq10/share_1567347/share_info/wendyzhang/context-aware-decoding/",      
-    "host_num": 1,
-    "host_gpu_num": 1,
-    "image_full_name": "mirrors.tencent.com/taiji/pytorch1.9.0-torchvision0.6.0-tlinux2.2-python3.7-cuda11.1-cudnn8.0:latest",
-    "task_flag": "cad_125m_boost_12_2"
-}
