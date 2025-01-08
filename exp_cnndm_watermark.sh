@@ -4,7 +4,7 @@ hf_cache=".cache/huggingface"
 mkdir -p ${hf_cache}
 export TRANSFORMERS_CACHE="${hf_cache}"
 export HF_HOME="${hf_cache}"
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=3
 
 # parameters
 GLOBALLEN="2048"
@@ -14,10 +14,12 @@ TOPP="0.9"
 FN_PREFIX="./eval/cnndm_example_input/cnndm"
 
 # results dir
-RESULTS_DIR="./results/llama7b"
-OUTPUT_DIR="./output/llama7b"
+RESULTS_DIR="./results/opt125m"
+OUTPUT_DIR="./output/opt125m"
 mkdir -p ${RESULTS_DIR}
 mkdir -p ${OUTPUT_DIR}
+
+MODEL_PATH=/mnt/nlp/gaoqiang/ckpt/opt-125m
 
 # Context boost delta
 BOOST_DELTAS=("1.0" "2.0" "5.0" "10.0") # "1.0" "2.0" "5.0" "10.0"
@@ -25,7 +27,9 @@ BOOST_DELTAS=("1.0" "2.0" "5.0" "10.0") # "1.0" "2.0" "5.0" "10.0"
 # decode and evaluate
 for BOOST_DELTA in "${BOOST_DELTAS[@]}"
 do
+    
     echo "------------------Processing Boost Delta: ${BOOST_DELTA}--------------------"
+    exec > "${RESULTS_DIR}/delta_${BOOST_DELTA}.log" 2>&1
     WEIGHT="1_0"
     TESTFILE="fin|${FN_PREFIX}_${WEIGHT}.jsonl"
     BASE_OUTPUT_FILE="$(basename ${FN_PREFIX}_${WEIGHT}.jsonl).output_topp${TOPP}_genlen${GENLEN}_boost${BOOST_DELTA}.jsonl"
@@ -35,7 +39,8 @@ do
     echo "Running decode with boost delta ${BOOST_DELTA}..."
     python group_decode_watermark_fileio.py \
         --max_seq_length ${GLOBALLEN} \
-        --model_name_or_path dummy \
+        --model_name_or_path ${MODEL_PATH} \
+        --output_dir ${OUTPUT_DIR}\
         --seed 2023 \
         --use_slow_tokenizer \
         --file_mode ${TESTFILE} \
@@ -44,7 +49,9 @@ do
         --train_mode decode \
         --projection_top_p ${TOPP} \
         --context_boost_delta ${BOOST_DELTA}
-    
+
+    # 恢复输出到终端
+    exec > /dev/tty 2>&1
     # check if succeed
     if [ $? -eq 0 ]; then
         echo "Decode completed successfully for boost delta ${BOOST_DELTA}"

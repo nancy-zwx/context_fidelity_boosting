@@ -134,7 +134,7 @@ if __name__ == "__main__":
     parser.add_argument("--pred_path", type=str, default="./eval/cnndm_example_input/cnndm_1.5_-0.5.jsonl.output_topp0.9_genlen100.jsonl")
     args = parser.parse_args()
 
-    cache_dir = "/apdcephfs_cq10/share_1567347/share_info/wendyzhang/.cache/huggingface"
+    cache_dir = ".cache/huggingface"
     tokenizer, factkb = load_models_with_cache(cache_dir)
     
     if tokenizer is not None and factkb is not None:

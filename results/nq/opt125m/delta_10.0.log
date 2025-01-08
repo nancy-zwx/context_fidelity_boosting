@@ -1,0 +1,31 @@
+Running decode with boost delta 10.0...
+Traceback (most recent call last):
+  File "/mnt/nlp/gaoqiang/context_fidelity_boosting/group_decode_watermark_fileio.py", line 1, in <module>
+    import accelerate
+  File "/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/accelerate/__init__.py", line 3, in <module>
+    from .accelerator import Accelerator
+  File "/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/accelerate/accelerator.py", line 32, in <module>
+    import torch
+  File "/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/torch/__init__.py", line 1474, in <module>
+    from torch import quantization as quantization
+  File "/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/torch/quantization/__init__.py", line 1, in <module>
+    from .quantize import *  # noqa: F403
+  File "/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/torch/quantization/quantize.py", line 10, in <module>
+    from torch.ao.quantization.quantize import (
+  File "/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/torch/ao/quantization/__init__.py", line 3, in <module>
+    from .fake_quantize import *  # noqa: F403
+  File "/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/torch/ao/quantization/fake_quantize.py", line 8, in <module>
+    from torch.ao.quantization.observer import (
+  File "/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/torch/ao/quantization/observer.py", line 15, in <module>
+    from torch.ao.quantization.utils import (
+  File "/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/torch/ao/quantization/utils.py", line 12, in <module>
+    from torch.fx import Node
+  File "/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/torch/fx/__init__.py", line 83, in <module>
+    from .graph_module import GraphModule
+  File "<frozen importlib._bootstrap>", line 1007, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 982, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 925, in _find_spec
+  File "<frozen importlib._bootstrap_external>", line 1423, in find_spec
+  File "<frozen importlib._bootstrap_external>", line 1395, in _get_spec
+  File "<frozen importlib._bootstrap_external>", line 1554, in find_spec
+KeyboardInterrupt

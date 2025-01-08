@@ -164,6 +164,13 @@ def parse_args():
         required=True,
     )
     parser.add_argument(
+        "--output_dir",
+        type=str,
+        help="Path to pretrained model or model identifier from huggingface.co/models.",
+        required=True,
+    )
+    
+    parser.add_argument(
         "--config_name",
         type=str,
         default=None,
@@ -186,7 +193,7 @@ def parse_args():
         default=1,
         help="Batch size (per device) for the evaluation dataloader.",
     )
-    parser.add_argument("--output_dir", type=str, default=None, help="Where to store the final model.")
+    # parser.add_argument("--output_dir", type=str, default=None, help="Where to store the final model.")
     parser.add_argument("--seed", type=int, default=None, help="A seed for reproducible training.")
     parser.add_argument(
         "--model_type",
@@ -275,7 +282,7 @@ def main():
     # 5. model
     first_data = fin_data[0]
     original_model_name = first_data['assigned_model'].split('|')[0]
-    args.model_name_or_path = get_small_model_name(original_model_name)
+    # args.model_name_or_path = get_small_model_name(original_model_name) 
     args.is_llama = 'llama' in args.model_name_or_path.lower()  # 添加模型类型检查
     logger.info(f"Original model: {original_model_name}")
     logger.info(f"Using small model: {args.model_name_or_path}")
@@ -398,10 +405,10 @@ def main():
                     continue
 
         # 9. results
-        output_dir = "./output/llama7b"
-        os.makedirs(output_dir, exist_ok=True)
+       
+        os.makedirs(args.output_dir, exist_ok=True)
         out_json_fn = os.path.join(
-            output_dir,
+            args.output_dir,
             f"{os.path.basename(args.file_mode[1])}.output_topp{args.projection_top_p}_genlen{args.decode_depth}.jsonl"
         )
         os.makedirs(os.path.dirname(out_json_fn), exist_ok=True)

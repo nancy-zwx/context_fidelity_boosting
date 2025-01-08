@@ -4,7 +4,7 @@ hf_cache=".cache/huggingface"
 mkdir -p ${hf_cache}
 export TRANSFORMERS_CACHE="${hf_cache}"
 export HF_HOME="${hf_cache}"
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=3
 
 # fix parameters
 GLOBALLEN="2048"
@@ -14,10 +14,12 @@ TOPP="0.9"
 FN_PREFIX="./eval/cnndm_example_input/cnndm"
 
 # dir
-RESULTS_DIR="./results/llama7b"
-OUTPUT_DIR="./output/llama7b"
+RESULTS_DIR="./results/opt125m"
+OUTPUT_DIR="./output/opt125m"
 mkdir -p ${RESULTS_DIR}
 mkdir -p ${OUTPUT_DIR}
+
+MODEL_PATH=/mnt/nlp/gaoqiang/ckpt/opt-125m
 
 # adaptive parameters
 ADAPTIVE_MODES=("delta_only" "temp_only" "both")
@@ -38,6 +40,7 @@ do
                 for BASE_TEMP in "${BASE_TEMPS[@]}"
                 do
                     echo "-------------Processing Adaptive Mode: ${MODE}-------------"
+                    exec > "${RESULTS_DIR}/adaptive_.log" 2>&1
                     echo "Min Delta: ${MIN_DELTA}, Max Delta: ${MAX_DELTA}"
                     echo "Min Temp: ${MIN_TEMP}, Base Temp: ${BASE_TEMP}"
                     
@@ -50,7 +53,8 @@ do
                     echo "Running decode with adaptive mode ${MODE}..."
                     python group_decode_adaptive_fileio.py \
                         --max_seq_length ${GLOBALLEN} \
-                        --model_name_or_path dummy \
+                        --model_name_or_path ${MODEL_PATH} \
+                        --output_dir ${OUTPUT_DIR}\
                         --seed 2023 \
                         --use_slow_tokenizer \
                         --file_mode ${TESTFILE} \
@@ -65,14 +69,15 @@ do
                         --base_temp ${BASE_TEMP} \
                         --output_stats \
                         --stats_logging
-                    
+                    # 恢复输出到终端
+                    exec > /dev/tty 2>&1
                     # check if succeed
                     if [ $? -eq 0 ]; then
                         echo "Decode completed successfully for mode ${MODE}"
                         
                         # run evaluate
                         echo "Running evaluate for mode ${MODE}..."
-                        python /apdcephfs_cq10/share_1567347/share_info/wendyzhang/cfb/eval/evaluate_summary.py \
+                        python ./eval/evaluate_summary.py \
                             --pred_path $OUTPUT_FILE \
                             --data_path "${FN_PREFIX}_${WEIGHT}.jsonl" \
                             2>&1 | tee "${RESULTS_DIR}/evaluate_results_${MODE}.log"

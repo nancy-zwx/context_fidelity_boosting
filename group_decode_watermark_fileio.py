@@ -317,7 +317,7 @@ def main():
     # model name
     first_data = fin_data[0]
     original_model_name = first_data['assigned_model'].split('|')[0]
-    args.model_name_or_path = get_small_model_name(original_model_name)
+    # args.model_name_or_path = get_small_model_name(original_model_name)
     logger.info(f"Original model: {original_model_name}")
     logger.info(f"Using small model for testing: {args.model_name_or_path}")
 
@@ -442,11 +442,11 @@ def main():
 
         # 11. output results
 
-        output_dir = "./output/llama7b"
-        os.makedirs(output_dir, exist_ok=True)
+        
+        os.makedirs(args.output_dir, exist_ok=True)
         base_filename = os.path.basename(fin_path)
         out_json_fn = f"{base_filename}.output_topp{args.projection_top_p}_genlen{args.decode_depth}_boost{args.context_boost_delta}.jsonl"
-        out_json_fn = os.path.join(output_dir,out_json_fn)
+        out_json_fn = os.path.join(args.output_dir,out_json_fn)
         os.makedirs(os.path.dirname(out_json_fn), exist_ok=True)
         with open(out_json_fn, mode="w") as f_out:
             for export in export_list:

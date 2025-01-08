@@ -1,10 +1,10 @@
 #!/bin/bash
 
-hf_cache=".cache/huggingface"
-mkdir -p ${hf_cache}
-export TRANSFORMERS_CACHE="${hf_cache}"
-export HF_HOME="${hf_cache}"
-export CUDA_VISIBLE_DEVICES=0
+# hf_cache=".cache/huggingface"
+# mkdir -p ${hf_cache}
+# export TRANSFORMERS_CACHE="${hf_cache}"
+# export HF_HOME="${hf_cache}"
+export CUDA_VISIBLE_DEVICES=2
 
 # parameters
 GLOBALLEN="2048"
@@ -14,8 +14,8 @@ TOPP="0.9"
 FN_PREFIX="./eval/cnndm_example_input/cnndm"
 
 # results dir
-RESULTS_DIR="./results/llama7b"
-OUTPUT_DIR="./output/llama7b"
+RESULTS_DIR="./results/opt350m"
+OUTPUT_DIR="./output/opt350m"
 mkdir -p ${RESULTS_DIR}
 mkdir -p ${OUTPUT_DIR}
 
@@ -23,9 +23,14 @@ mkdir -p ${OUTPUT_DIR}
 
 WEIGHTS=("1_0" "1.5_-0.5")
 
+MODEL_PATH=/mnt/nlp/gaoqiang/ckpt/opt-350m
+
 for WEIGHT in "${WEIGHTS[@]}"  
 do
+    
+    
     echo "------------------Processing Weight: ${WEIGHT}--------------------"
+    exec > "${RESULTS_DIR}/weight_${WEIGHT}.log" 2>&1
     
     TESTFILE="fin|${FN_PREFIX}_${WEIGHT}.jsonl"
     BASE_OUTPUT_FILE="$(basename ${FN_PREFIX}_${WEIGHT}.jsonl).output_topp${TOPP}_genlen${GENLEN}.jsonl"
@@ -36,7 +41,8 @@ do
     echo "Running decode for weight ${WEIGHT}..."
     python group_decode_fileio.py \
         --max_seq_length ${GLOBALLEN} \
-        --model_name_or_path dummy \
+        --model_name_or_path ${MODEL_PATH} \
+        --output_dir ${OUTPUT_DIR}\
         --seed 2023 \
         --use_slow_tokenizer \
         --file_mode ${TESTFILE} \
@@ -44,6 +50,9 @@ do
         --decode_depth ${GENLEN} \
         --train_mode decode \
         --projection_top_p ${TOPP}
+
+    # 恢复输出到终端
+    exec > /dev/tty 2>&1
     
     # check if succeed
     if [ $? -eq 0 ]; then
@@ -67,6 +76,7 @@ do
         exit 1
     fi
 done
+
 
 ## results
 for WEIGHT in "${WEIGHTS[@]}"

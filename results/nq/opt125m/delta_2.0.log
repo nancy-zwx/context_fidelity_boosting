@@ -1,0 +1,26 @@
+Running decode with boost delta 2.0...
+/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/transformers/utils/hub.py:128: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+01/08/2025 17:05:53 - INFO - __main__ - Original model: huggyllama/llama-7b
+01/08/2025 17:05:53 - INFO - __main__ - Using small model for testing: /mnt/nlp/gaoqiang/ckpt/opt-125m
+01/08/2025 17:05:53 - INFO - __main__ - Loading tokenizer...
+/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/transformers/tokenization_utils_base.py:1895: FutureWarning: The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers. Please use `token` instead.
+  warnings.warn(
+01/08/2025 17:05:53 - INFO - __main__ - Tokenizer loaded successfully
+01/08/2025 17:05:53 - INFO - __main__ - Loading model...
+/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/transformers/modeling_utils.py:3491: FutureWarning: The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers. Please use `token` instead.
+  warnings.warn(
+/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/torch/_utils.py:831: UserWarning: TypedStorage is deprecated. It will be removed in the future and UntypedStorage will be the only storage class. This should only matter to you if you are using storages directly.  To access UntypedStorage directly, use tensor.untyped_storage() instead of tensor.storage()
+  return self.fget.__get__(instance, owner)()
+01/08/2025 17:05:54 - INFO - __main__ - Model loaded successfully and moved to GPU
+Processing inputs:   0%|          | 0/2 [00:00<?, ?it/s]01/08/2025 17:05:57 - INFO - __main__ - context: ['</s>The fourth season of Chicago Fire , an American drama television series with executive producer Dick Wolf , and producers Derek Haas , Michael Brandt , and Matt Olmstead , was ordered on February 5 , 2015 , by NBC , and premiered on October 13 , 2015 and concluded on May 17 , 2016 . The season contained 1078 episodes . How many episodes are in chicago fire season 4 ?']
+01/08/2025 17:05:57 - INFO - __main__ - sampled: [' The season 4 season 4 season 4 was ordered on']
+01/08/2025 17:05:57 - INFO - __main__ - Processed input 0
+01/08/2025 17:05:57 - INFO - __main__ - Context boost delta: 2.0
+Processing inputs:  50%|█████     | 1/2 [00:02<00:02,  2.61s/it]01/08/2025 17:05:57 - INFO - __main__ - context: ['</s>How many episodes are in chicago fire season 4 ?']
+01/08/2025 17:05:57 - INFO - __main__ - sampled: ["\nI'm not sure, but I'm sure"]
+01/08/2025 17:05:57 - INFO - __main__ - Processed input 0
+01/08/2025 17:05:57 - INFO - __main__ - Context boost delta: 2.0
+Processing inputs: 100%|██████████| 2/2 [00:03<00:00,  1.39s/it]Processing inputs: 100%|██████████| 2/2 [00:03<00:00,  1.57s/it]
+01/08/2025 17:05:57 - INFO - __main__ - Successfully processed 2 out of 7998 inputs
+01/08/2025 17:05:57 - INFO - __main__ - Results saved to ./output/nq/opt125m/nqswap_1_0.jsonl.output_topp0.0_genlen10_boost2.0.jsonl

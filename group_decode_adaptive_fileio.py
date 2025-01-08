@@ -293,6 +293,12 @@ def parse_args():
         required=True,
     )
     parser.add_argument(
+        "--output_dir",
+        type=str,
+        help="Path to pretrained model or model identifier from huggingface.co/models.",
+        required=True,
+    )
+    parser.add_argument(
         "--config_name",
         type=str,
         default=None,
@@ -315,12 +321,12 @@ def parse_args():
         default=1,
         help="Batch size (per device) for the evaluation dataloader.",
     )
-    parser.add_argument(
-        "--output_dir", 
-        type=str, 
-        default=None, 
-        help="Where to store the final model."
-    )
+    # parser.add_argument(
+    #     "--output_dir", 
+    #     type=str, 
+    #     default=None, 
+    #     help="Where to store the final model."
+    # )
     parser.add_argument(
         "--seed", 
         type=int, 
@@ -510,7 +516,7 @@ def main():
     )
     logger = logging.getLogger(__name__)
 
-    cache_dir = "/apdcephfs_cq10/share_1567347/share_info/wendyzhang/.cache/huggingface"
+    cache_dir = ".cache/huggingface"
     os.makedirs(cache_dir, exist_ok=True)
     os.environ['TRANSFORMERS_CACHE'] = cache_dir
     os.environ['HF_HOME'] = cache_dir
@@ -537,7 +543,7 @@ def main():
 
     first_data = fin_data[0]
     original_model_name = first_data['assigned_model'].split('|')[0]
-    args.model_name_or_path = get_small_model_name(original_model_name)
+    # args.model_name_or_path = get_small_model_name(original_model_name)
     logger.info(f"Original model: {original_model_name}")
     logger.info(f"Using small model for testing: {args.model_name_or_path}")
 
@@ -653,11 +659,11 @@ def main():
                     logger.error("Error details:", exc_info=True)
                     continue
 
-        output_dir = "./output/llama7b"
-        os.makedirs(output_dir, exist_ok=True)
+       
+        os.makedirs(args.output_dir, exist_ok=True)
         base_filename = os.path.basename(fin_path)
-        out_json_fn = f"{base_filename}.output_topp{args.projection_top_p}_genlen{args.decode_depth}_adaptive.jsonl"
-        out_json_fn = os.path.join(output_dir, out_json_fn)
+        out_json_fn = f"{base_filename}.output_topp{args.projection_top_p}_genlen{args.decode_depth}_adaptive_{args.adaptive_mode}.jsonl"
+        out_json_fn = os.path.join(args.output_dir, out_json_fn)
         os.makedirs(os.path.dirname(out_json_fn), exist_ok=True)
         
         with open(out_json_fn, mode="w") as f_out:

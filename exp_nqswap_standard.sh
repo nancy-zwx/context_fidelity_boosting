@@ -10,20 +10,21 @@ export CUDA_VISIBLE_DEVICES=0
 GLOBALLEN="2048"
 MAXCTXLEN="2038"
 GENLEN="10"
-FN_PREFIX="nqswap"
+FN_PREFIX="./eval/nqswap_example_input/nqswap"
 TOPP="0.0"
 
 # results dir
-RESULTS_DIR="./results/llama7b"
-OUTPUT_DIR="./output/llama7b"
+RESULTS_DIR="./results/nq/opt125m"
+OUTPUT_DIR="./output/nq/opt125m"
 mkdir -p ${RESULTS_DIR}
 mkdir -p ${OUTPUT_DIR}
-
+MODEL_PATH=/mnt/nlp/gaoqiang/ckpt/opt-125m
 
 WEIGHTS=("1_0" "2_-1")
 for WEIGHT in "${WEIGHTS[@]}"  
 do
     echo "------------------Processing Weight: ${WEIGHT}--------------------"
+    exec > "${RESULTS_DIR}/nqstandard_weight_${WEIGHT}_.log" 2>&1
     
     TESTFILE="fin|${FN_PREFIX}_${WEIGHT}.jsonl"
     BASE_OUTPUT_FILE="$(basename ${FN_PREFIX}_${WEIGHT}.jsonl).output_topp${TOPP}_genlen${GENLEN}.jsonl"
@@ -31,9 +32,11 @@ do
     
     # run decode
     echo "Running decode for weight ${WEIGHT}..."
+    
     python group_decode_fileio.py \
         --max_seq_length ${GLOBALLEN} \
-        --model_name_or_path dummy \
+        --model_name_or_path ${MODEL_PATH} \
+        --output_dir ${OUTPUT_DIR} \
         --seed 2023 \
         --use_slow_tokenizer \
         --file_mode ${TESTFILE} \
@@ -41,7 +44,8 @@ do
         --decode_depth ${GENLEN} \
         --train_mode decode \
         --projection_top_p ${TOPP}
-    
+     # 恢复输出到终端
+    exec > /dev/tty 2>&1
     # check if succeed
     if [ $? -eq 0 ]; then
         echo "Decode completed successfully for weight ${WEIGHT}"

@@ -1,0 +1,18 @@
+Running decode for weight 2_-1...
+/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/transformers/utils/hub.py:128: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+01/08/2025 16:58:04 - INFO - __main__ - Original model: huggyllama/llama-7b
+01/08/2025 16:58:04 - INFO - __main__ - Using small model: /mnt/nlp/gaoqiang/ckpt/opt-125m
+01/08/2025 16:58:04 - INFO - __main__ - Is LLaMA model: False
+/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/transformers/tokenization_utils_base.py:1895: FutureWarning: The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers. Please use `token` instead.
+  warnings.warn(
+/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/transformers/modeling_utils.py:3491: FutureWarning: The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers. Please use `token` instead.
+  warnings.warn(
+/mnt/nlp/gaoqiang/miniconda3/envs/DeepSeekMoE/lib/python3.9/site-packages/torch/_utils.py:831: UserWarning: TypedStorage is deprecated. It will be removed in the future and UntypedStorage will be the only storage class. This should only matter to you if you are using storages directly.  To access UntypedStorage directly, use tensor.untyped_storage() instead of tensor.storage()
+  return self.fget.__get__(instance, owner)()
+Processing inputs:   0%|          | 0/2 [00:00<?, ?it/s]01/08/2025 16:58:06 - INFO - __main__ - context: ['</s>The fourth season of Chicago Fire , an American drama television series with executive producer Dick Wolf , and producers Derek Haas , Michael Brandt , and Matt Olmstead , was ordered on February 5 , 2015 , by NBC , and premiered on October 13 , 2015 and concluded on May 17 , 2016 . The season contained 1078 episodes . How many episodes are in chicago fire season 4 ?']
+01/08/2025 16:58:06 - INFO - __main__ - sampled: ['\n\nThe fourth season of Chicago Fire , an']
+Processing inputs:  50%|█████     | 1/2 [00:01<00:01,  1.47s/it]01/08/2025 16:58:07 - INFO - __main__ - context: ['</s>How many episodes are in chicago fire season 4 ?']
+01/08/2025 16:58:07 - INFO - __main__ - sampled: ['\nbleacher confidencehanded-+-+-+-+iri\n\n sectorailability']
+Processing inputs: 100%|██████████| 2/2 [00:01<00:00,  1.28it/s]Processing inputs: 100%|██████████| 2/2 [00:01<00:00,  1.13it/s]
+01/08/2025 16:58:07 - INFO - __main__ - Successfully processed 2 out of 7998 inputs
