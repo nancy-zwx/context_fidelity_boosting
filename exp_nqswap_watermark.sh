@@ -15,16 +15,18 @@ FN_PREFIX="./eval/nqswap_example_input/nqswap"
 TOPP="0.0"
 
 # results dir
-RESULTS_DIR="./results/nq/opt125m"
-OUTPUT_DIR="./output/nq/opt125m"
+RESULTS_DIR="./results/nq/llama2-7b"
+OUTPUT_DIR="./output/nq/llama2-7b"
 mkdir -p ${RESULTS_DIR}
 mkdir -p ${OUTPUT_DIR}
 
-MODEL_PATH=/mnt/nlp/gaoqiang/ckpt/opt-125m
+MODEL_PATH=/home/gaoqiang/ckpt/Llama-2-7b-chat-hf
 
 
 # Context boost参数配置
-BOOST_DELTAS=("1.0" "2.0" "5.0" "10.0") 
+# BOOST_DELTAS=("1.0" "2.0" "5.0" "10.0"
+BOOST_DELTAS=($(seq 18.0 1.0 50.0))
+
 
 # decode and evaluate
 for BOOST_DELTA in "${BOOST_DELTAS[@]}"

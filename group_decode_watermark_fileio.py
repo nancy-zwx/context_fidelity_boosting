@@ -1,5 +1,5 @@
 import accelerate
-from accelerate import Accelerator,InitProcessGroupKwargs
+# from accelerate import Accelerator,InitProcessGroupKwargs
 import argparse
 import datasets
 import datetime
@@ -307,12 +307,15 @@ def main():
     assert args.file_mode[0] == "fin"
     assert os.path.exists(args.file_mode[1])
     fin_path = args.file_mode[1]
+    
     fin_data = []
-    with open(fin_path, 'r', encoding='utf-8') as f:
+    with open(args.file_mode[1], 'r', encoding='utf-8') as f:
         for line in f:
             proc_line = line.strip()
             if proc_line:
-                fin_data.append(json.loads(proc_line))
+                data = json.loads(proc_line)
+                if data.get('assigned_process', 0) == 0:
+                    fin_data.append(data)
 
     # model name
     first_data = fin_data[0]
