@@ -534,12 +534,15 @@ def main():
     assert args.file_mode[0] == "fin"
     assert os.path.exists(args.file_mode[1])
     fin_path = args.file_mode[1]
+
     fin_data = []
-    with open(fin_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            proc_line = line.strip()
-            if proc_line:
-                fin_data.append(json.loads(proc_line))
+        with open(args.file_mode[1], 'r', encoding='utf-8') as f:
+            for line in f:
+                proc_line = line.strip()
+                if proc_line:
+                    data = json.loads(proc_line)
+                    if data.get('assigned_process', 0) == 0:
+                        fin_data.append(data)
 
     first_data = fin_data[0]
     original_model_name = first_data['assigned_model'].split('|')[0]
@@ -644,7 +647,7 @@ def main():
                         'assigned_model': args.model_name_or_path,
                         'original_model': original_model_name,
                         'assigned_weight': _fd.get('assigned_weight', 1.0),
-                        'assigned_process': 0,
+                        'assigned_process': _fd.get('assigned_process', 0),
                         'avg_delta': avg_stats['avg_delta'],
                         'avg_temperature': avg_stats['avg_temperature'],
                         'avg_jsd': avg_stats['avg_jsd'],

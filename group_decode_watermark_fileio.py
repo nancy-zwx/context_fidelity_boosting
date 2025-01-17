@@ -357,7 +357,7 @@ def main():
         if 'llama' in args.model_name_or_path.lower():
             model = AutoModelForCausalLM.from_pretrained(
                 args.model_name_or_path,
-                torch_dtype=torch.float16,
+                torch_dtype=torch.bfloat16,
                 device_map='auto',
                 cache_dir=cache_dir,
                 use_auth_token="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"
@@ -430,7 +430,7 @@ def main():
                         'assigned_model': args.model_name_or_path,
                         'original_model': original_model_name,
                         'assigned_weight': _fd.get('assigned_weight', 1.0),
-                        'assigned_process': 0,
+                        'assigned_process': _fd.get('assigned_process', 0),
                         'context_boost_delta': args.context_boost_delta,  # 添加boost参数信息
                         'context': context_sequences[0] if context_sequences else None,
                     }

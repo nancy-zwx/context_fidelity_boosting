@@ -14,20 +14,24 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from rouge_score import rouge_scorer
 
-login(token="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")
+from evaluation import calculate_acc,ems
+import bert_score.score as bert_score
+from alignscore.alignscore import AlignScore
+
+# login(token="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")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def load_models_with_cache(cache_dir=".cache/huggingface"):
-    os.makedirs(cache_dir, exist_ok=True)
+    # os.makedirs(cache_dir, exist_ok=True)
     
     try:
         os.environ['TRANSFORMERS_CACHE'] = cache_dir
         
         logger.info("Loading tokenizer...")
         tokenizer = AutoTokenizer.from_pretrained(
-            "roberta-base",
+            "/home/gaoqiang/ckpt/roberta-base",
             cache_dir=cache_dir,
             local_files_only=True if os.path.exists(os.path.join(cache_dir, "roberta-base")) else False
         )
@@ -39,7 +43,7 @@ def load_models_with_cache(cache_dir=".cache/huggingface"):
             os.makedirs(model_path, exist_ok=True)
             
         factkb = AutoModelForSequenceClassification.from_pretrained(
-            "bunsenfeng/FactKB",
+            "/home/gaoqiang/ckpt/FactKB",
             cache_dir=cache_dir,
             local_files_only=True if os.path.exists(model_path) else False,
             num_labels=2
@@ -118,6 +122,50 @@ def evaluate_qa(index2ex, eval_file, tokenizer, factkb):
     
     results = {k: statistics.mean(v) for k, v in rouge_scores.items()}
     print("ROUGE results:", results)
+
+
+        # # bertscore
+    # print("Computing BERTScore...")
+    # P, R, F1 = bert_score(all_pred, all_gold, lang="en", verbose=True)
+    # # P, R, F1 分别是 Precision, Recall 和 F1 分数
+    # print(P.align)
+    # print("Bertscore Precision:", P.mean().item())
+    # print("Bertscore Recall:", R.mean().item())
+    # print("Bertscore F1 Score:", F1.mean().item())
+
+    bertscore = evaluate.load("bertscore")
+    results = bertscore.compute(predictions=all_pred, references=all_doc, lang="en")
+    # print("bertscore: ", results)
+    print("bertscore: ")
+    for k, v in results.items():
+        if k in ["precision", "recall", "f1"]:
+            print(f"{k}: {statistics.mean(v)}")
+
+    # 两种算法区别很大
+
+
+    # AlignScore
+    # logger.info("Computing AlignScore...")
+    
+
+    # scorer = AlignScore(model='roberta-base', batch_size=32, device='cuda:0', ckpt_path='/home/gaoqiang/ckpt/roberta-base', evaluation_mode='nli_sp')
+    # align_score = scorer.score(contexts=all_doc, claims=all_pred)
+    # print(align_score)
+
+    # Accuracy
+    logger.info("Computing Accuracy...")
+    exact_match_count=0
+    acc_scores=0
+    import pdb
+    for pred, gold in zip(all_pred, all_gold):
+        exact_match_count += ems(pred, gold)
+        acc_scores += calculate_acc(pred, gold)
+    
+    em = round(exact_match_count/len(all_pred), 4)
+    acc_score = round(acc_scores/len(all_pred), 4)
+    print("Exact Match:", em)
+    print("Accuracy:", acc_score)
+
 
 def entity_data(dataset_path):
     raw_data = []

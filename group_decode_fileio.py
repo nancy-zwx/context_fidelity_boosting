@@ -276,8 +276,14 @@ def main():
     args.file_mode = args.file_mode.split('|')
     assert args.file_mode[0] == "fin" and os.path.exists(args.file_mode[1])
     
+    fin_data = []
     with open(args.file_mode[1], 'r', encoding='utf-8') as f:
-        fin_data = [json.loads(line.strip()) for line in f if line.strip()]
+        for line in f:
+            proc_line = line.strip()
+            if proc_line:
+                data = json.loads(proc_line)
+                if data.get('assigned_process', 0) == 0:
+                    fin_data.append(data)
 
     # 5. model
     first_data = fin_data[0]
@@ -396,7 +402,7 @@ def main():
                         'assigned_model': args.model_name_or_path,
                         'original_model': original_model_name,
                         'assigned_weight': _fd.get('assigned_weight', 1.0),
-                        'assigned_process': 0
+                        'assigned_process': _fd.get('assigned_process', 0)
                     })
 
                 except Exception as e:
