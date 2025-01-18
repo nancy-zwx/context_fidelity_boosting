@@ -4,7 +4,7 @@ hf_cache=".cache/huggingface"
 mkdir -p ${hf_cache}
 export TRANSFORMERS_CACHE="${hf_cache}"
 export HF_HOME="${hf_cache}"
-# export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=0
 
 # parameters
 GLOBALLEN="2048"
@@ -14,12 +14,12 @@ TOPP="0.9"
 FN_PREFIX="./eval/cnndm_example_input/cnndm"
 
 # results dir
-RESULTS_DIR="./results/cnn/llama2-13b"
-OUTPUT_DIR="./output/cnn/llama2-13b"
+RESULTS_DIR="./results/cnn/mistral-7b"
+OUTPUT_DIR="./output/cnn/mistral-7b"
 mkdir -p ${RESULTS_DIR}
 mkdir -p ${OUTPUT_DIR}
 
-MODEL_PATH=/home/gaoqiang/ckpt/Llama-2-13b-chat-hf
+MODEL_PATH=/home/gaoqiang/ckpt/Mistral-7B-Instruct-v0.3
 
 # Context boost delta
 # BOOST_DELTAS=("1.0" "2.0" "5.0" "10.0") # "1.0" "2.0" "5.0" "10.0"
