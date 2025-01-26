@@ -16,7 +16,7 @@ from rouge_score import rouge_scorer
 
 from evaluation import calculate_acc,ems
 import bert_score.score as bert_score
-from alignscore.alignscore import AlignScore
+# from alignscore.alignscore import AlignScore
 
 # login(token="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")
 
@@ -110,6 +110,23 @@ def evaluate_qa(index2ex, eval_file, tokenizer, factkb):
     
     if all_fact_score:
         print(f"Average fact score: {statistics.mean(all_fact_score):.4f}")
+    # Accuracy
+    logger.info("Computing Accuracy...")
+    exact_match_count=0
+    acc_scores=0
+    import pdb
+    for pred, gold in zip(all_pred, all_gold):
+        if isinstance(gold, str):
+            gold = [gold]
+        if not isinstance(gold, list):
+            raise ValueError("Ground truth must be a list")
+        exact_match_count += ems(pred, gold)
+        acc_scores += calculate_acc(pred, gold)
+    
+    em = round(exact_match_count/len(all_pred), 4)
+    acc_score = round(acc_scores/len(all_pred), 4)
+    print("Exact Match:", em)
+    print("Accuracy:", acc_score)
     
     logger.info("Computing ROUGE scores...")
     scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
@@ -152,19 +169,19 @@ def evaluate_qa(index2ex, eval_file, tokenizer, factkb):
     # align_score = scorer.score(contexts=all_doc, claims=all_pred)
     # print(align_score)
 
-    # Accuracy
-    logger.info("Computing Accuracy...")
-    exact_match_count=0
-    acc_scores=0
-    import pdb
-    for pred, gold in zip(all_pred, all_gold):
-        exact_match_count += ems(pred, gold)
-        acc_scores += calculate_acc(pred, gold)
+    # # Accuracy
+    # logger.info("Computing Accuracy...")
+    # exact_match_count=0
+    # acc_scores=0
+    # import pdb
+    # for pred, gold in zip(all_pred, all_gold):
+    #     exact_match_count += ems(pred, gold)
+    #     acc_scores += calculate_acc(pred, gold)
     
-    em = round(exact_match_count/len(all_pred), 4)
-    acc_score = round(acc_scores/len(all_pred), 4)
-    print("Exact Match:", em)
-    print("Accuracy:", acc_score)
+    # em = round(exact_match_count/len(all_pred), 4)
+    # acc_score = round(acc_scores/len(all_pred), 4)
+    # print("Exact Match:", em)
+    # print("Accuracy:", acc_score)
 
 
 def entity_data(dataset_path):

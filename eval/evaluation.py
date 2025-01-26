@@ -98,10 +98,10 @@ def ems(prediction, ground_truths):
     return max([exact_match_score(prediction, gt) for gt in ground_truths])
 
 def calculate_acc(prediction, ground_truth):
-    if normalize_answer(ground_truth) in normalize_answer(prediction):
-        return 1
-    else:
-        return 0
+    for gt in ground_truth:
+        if normalize_answer(gt) in normalize_answer(prediction):
+            return 1
+    return 0
 
 
 def f1_score(prediction, ground_truth):
@@ -159,6 +159,7 @@ def eval_question_answering(inputs):
             output = output.split(' || ')[0]
         output = output.split('the answer is')[-1]
         has_answer_count += has_answer(answers, output, tokenizer)
+        output = [output]#必须有，负责会出错
         exact_match_count += ems(output, answers)
         f1_scores += f1(output, answers)
         acc_scores += calculate_acc(output, answers)

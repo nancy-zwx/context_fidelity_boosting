@@ -13,12 +13,16 @@ GENLEN="10"
 FN_PREFIX="./eval/nqswap_example_input/nqswap"
 TOPP="0.0"
 
+
+MODEL_PATH=/home/gaoqiang/ckpt/Mistral-7B-Instruct-v0.3
+MODEL_NAME=$(basename ${MODEL_PATH})
+
 # results dir
-RESULTS_DIR="./results/nq/mistral-7b"
-OUTPUT_DIR="./output/nq/mistral-7b"
+RESULTS_DIR="./results/nq/${MODEL_NAME}"
+OUTPUT_DIR="./output/nq/${MODEL_NAME}"
 mkdir -p ${RESULTS_DIR}
 mkdir -p ${OUTPUT_DIR}
-MODEL_PATH=/home/gaoqiang/ckpt/Mistral-7B-Instruct-v0.3
+
 
 WEIGHTS=("1_0" "2_-1")
 for WEIGHT in "${WEIGHTS[@]}"  

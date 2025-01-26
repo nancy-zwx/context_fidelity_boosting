@@ -4,7 +4,7 @@ hf_cache=".cache/huggingface"
 mkdir -p ${hf_cache}
 export TRANSFORMERS_CACHE="${hf_cache}"
 export HF_HOME="${hf_cache}"
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 
 # parameters
@@ -15,12 +15,16 @@ FN_PREFIX="./eval/nqswap_example_input/nqswap"
 TOPP="0.0"
 
 # results dir
-RESULTS_DIR="./results/nq/mistral-7b"
-OUTPUT_DIR="./output/nq/mistral-7b"
+RESULTS_DIR="./results/nqswap/mistral-7b"
+OUTPUT_DIR="./output/nqswap/mistral-7b"
 mkdir -p ${RESULTS_DIR}
 mkdir -p ${OUTPUT_DIR}
 
 MODEL_PATH=/home/gaoqiang/ckpt/Mistral-7B-Instruct-v0.3
+MODEL_NAME=$(basename ${MODEL_PATH})
+
+factkb_model_path= # bunsenfeng/FactKB
+tokenizer_model_path= #roberta-base
 
 
 # Context boost参数配置
@@ -32,13 +36,14 @@ BOOST_DELTAS=($(seq 1.0 1.0 10.0))
 for BOOST_DELTA in "${BOOST_DELTAS[@]}"
 do
     echo "------------------Processing Boost Delta: ${BOOST_DELTA}--------------------"
-    exec > "${RESULTS_DIR}/delta_${BOOST_DELTA}.log" 2>&1
+    
     WEIGHT="1_0"
     TESTFILE="fin|${FN_PREFIX}_${WEIGHT}.jsonl"
     BASE_OUTPUT_FILE="$(basename ${FN_PREFIX}_${WEIGHT}.jsonl).output_topp${TOPP}_genlen${GENLEN}_boost${BOOST_DELTA}.jsonl"
     OUTPUT_FILE="${OUTPUT_DIR}/${BASE_OUTPUT_FILE}"
     
     # run decode
+    exec > "${RESULTS_DIR}/delta_${BOOST_DELTA}.log" 2>&1
     echo "Running decode with boost delta ${BOOST_DELTA}..."
     python group_decode_watermark_fileio.py \
         --max_seq_length ${GLOBALLEN} \
@@ -60,9 +65,11 @@ do
         
         # run evaluate
         echo "Running evaluate for boost delta ${BOOST_DELTA}..."
-        python ./eval/evaluate_summary_nqswap.py \
+        python ./eval/evaluate_summary.py \
             --pred_path $OUTPUT_FILE \
             --data_path "${FN_PREFIX}_${WEIGHT}.jsonl" \
+            --factkb_model_path ${factkb_model_path} \
+            --tokenizer_model_path ${tokenizer_model_path} \
             2>&1 | tee "${RESULTS_DIR}/evaluate_results_boost${BOOST_DELTA}.log"
         
         if [ $? -eq 0 ]; then

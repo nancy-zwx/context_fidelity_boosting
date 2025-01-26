@@ -319,7 +319,8 @@ def main():
 
     # model name
     first_data = fin_data[0]
-    original_model_name = first_data['assigned_model'].split('|')[0]
+    # original_model_name = first_data['assigned_model'].split('|')[0]
+    original_model_name = first_data['assigned_model']
     # args.model_name_or_path = get_small_model_name(original_model_name)
     logger.info(f"Original model: {original_model_name}")
     logger.info(f"Using small model for testing: {args.model_name_or_path}")
@@ -394,9 +395,11 @@ def main():
         # generate
         export_list = []
         args.orig_decode_truncate_len = args.decode_truncate_len
+
+       
         
         with torch.no_grad():
-            for _fd in tqdm(fin_data, desc="Processing inputs"):
+            for _fd in tqdm(fin_data[:5], desc="Processing inputs"):
                 try:
                     args.assigned_weight = _fd.get('assigned_weight', 1.0)
                     args.filter_top_p = _fd.get('filter_p', getattr(args, 'filter_top_p', 1.0))
@@ -410,11 +413,13 @@ def main():
                     ).unsqueeze(0).to(device)
                     
                     args.context_size = input_ids.size(1)  
+
+                    logger.info(f"****args.context_size*****: {args.context_size}")
                     args.decode_truncate_len = args.orig_decode_truncate_len - args.context_size
                     
                     if args.decode_truncate_len < 0:
                         logger.warning(f"Skipping long input {_fd['input_index']}")
-                        continue
+                        # continue
 
                     # watermark-based decode
                     with torch.cuda.amp.autocast():

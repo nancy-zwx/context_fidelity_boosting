@@ -13,13 +13,20 @@ GENLEN="100"
 TOPP="0.9"
 FN_PREFIX="./eval/tapmwp_problems_test1k"
 
+
+MODEL_PATH=/home/gaoqiang/ckpt/Mistral-7B-Instruct-v0.3
+MODEL_NAME=$(basename ${MODEL_PATH})
+
+factkb_model_path= # bunsenfeng/FactKB
+tokenizer_model_path= #roberta-base
+
 # results dir
-RESULTS_DIR="./results/tapmwp/mistral-7b"
-OUTPUT_DIR="./output/tapmwp/mistral-7b"
+RESULTS_DIR="./results/tapmwp/${MODEL_NAME}"
+OUTPUT_DIR="./output/tapmwp/${MODEL_NAME}"
 mkdir -p ${RESULTS_DIR}
 mkdir -p ${OUTPUT_DIR}
 
-MODEL_PATH=/home/gaoqiang/ckpt/Mistral-7B-Instruct-v0.3
+
 
 # Context boost delta
 # BOOST_DELTAS=("1.0" "2.0" "5.0" "10.0") # "1.0" "2.0" "5.0" "10.0"
@@ -62,6 +69,8 @@ do
         python ./eval/evaluate_summary.py \
             --pred_path $OUTPUT_FILE \
             --data_path "${FN_PREFIX}.jsonl" \
+            --factkb_model_path ${factkb_model_path} \
+            --tokenizer_model_path ${tokenizer_model_path} \
             2>&1 | tee "${RESULTS_DIR}/evaluate_results_boost${BOOST_DELTA}.log"
         
         if [ $? -eq 0 ]; then

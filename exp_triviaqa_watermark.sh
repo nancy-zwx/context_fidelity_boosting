@@ -4,25 +4,25 @@ hf_cache=".cache/huggingface"
 mkdir -p ${hf_cache}
 export TRANSFORMERS_CACHE="${hf_cache}"
 export HF_HOME="${hf_cache}"
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 # parameters
 GLOBALLEN="2048"
 MAXCTXLEN="1948"
 GENLEN="100"
 TOPP="0.9"
-FN_PREFIX="./eval/cnndm_example_input/cnndm"
+FN_PREFIX="./eval/triviaqa_validation_wikipedia"
 
 
 MODEL_PATH=/home/gaoqiang/ckpt/Mistral-7B-Instruct-v0.3
 MODEL_NAME=$(basename ${MODEL_PATH})
 
-factkb_model_path=/home/gaoqiang/ckpt/FactKB # bunsenfeng/FactKB
-tokenizer_model_path=/home/gaoqiang/ckpt/roberta-base   #roberta-base
+factkb_model_path= # bunsenfeng/FactKB
+tokenizer_model_path= #roberta-base
 
 # results dir
-RESULTS_DIR="./results/cnn/${MODEL_NAME}"
-OUTPUT_DIR="./output/cnn/${MODEL_NAME}"
+RESULTS_DIR="./results/triviaqa/${MODEL_NAME}"
+OUTPUT_DIR="./output/triviaqa/${MODEL_NAME}"
 mkdir -p ${RESULTS_DIR}
 mkdir -p ${OUTPUT_DIR}
 
@@ -39,8 +39,8 @@ do
     echo "------------------Processing Boost Delta: ${BOOST_DELTA}--------------------"
     exec > "${RESULTS_DIR}/delta_${BOOST_DELTA}.log" 2>&1
     WEIGHT="1_0"
-    TESTFILE="fin|${FN_PREFIX}_${WEIGHT}.jsonl"
-    BASE_OUTPUT_FILE="$(basename ${FN_PREFIX}_${WEIGHT}.jsonl).output_topp${TOPP}_genlen${GENLEN}_boost${BOOST_DELTA}.jsonl"
+    TESTFILE="fin|${FN_PREFIX}.jsonl"
+    BASE_OUTPUT_FILE="$(basename ${FN_PREFIX}.jsonl).output_topp${TOPP}_genlen${GENLEN}_boost${BOOST_DELTA}.jsonl"
     OUTPUT_FILE="${OUTPUT_DIR}/${BASE_OUTPUT_FILE}"
     
     # run decode
@@ -68,7 +68,7 @@ do
         echo "Running evaluate for boost delta ${BOOST_DELTA}..."
         python ./eval/evaluate_summary.py \
             --pred_path $OUTPUT_FILE \
-            --data_path "${FN_PREFIX}_${WEIGHT}.jsonl" \
+            --data_path "${FN_PREFIX}.jsonl" \
             --factkb_model_path ${factkb_model_path} \
             --tokenizer_model_path ${tokenizer_model_path} \
             2>&1 | tee "${RESULTS_DIR}/evaluate_results_boost${BOOST_DELTA}.log"

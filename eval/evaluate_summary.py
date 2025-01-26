@@ -16,11 +16,9 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 from evaluation import calculate_acc,ems
 import bert_score.score as bert_score
-from alignscore.alignscore import AlignScore
-
+# from alignscore.alignscore import AlignScore
 
 # login(token="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")
-
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,7 +31,7 @@ def load_models_with_cache(cache_dir=".cache/huggingface"):
         
         logger.info("Loading tokenizer...")
         tokenizer = AutoTokenizer.from_pretrained(
-            "/home/gaoqiang/ckpt/roberta-base",
+            args.tokenizer_model_path,
             # cache_dir=cache_dir,
             local_files_only=True if os.path.exists(os.path.join(cache_dir, "roberta-base")) else False
         )
@@ -45,7 +43,7 @@ def load_models_with_cache(cache_dir=".cache/huggingface"):
             os.makedirs(model_path, exist_ok=True)
             
         factkb = AutoModelForSequenceClassification.from_pretrained(
-            "/home/gaoqiang/ckpt/FactKB",
+            args.factkb_model_path,
             # cache_dir=cache_dir,
             local_files_only=True if os.path.exists(model_path) else False,
             num_labels=2
@@ -59,11 +57,6 @@ def load_models_with_cache(cache_dir=".cache/huggingface"):
     except Exception as e:
         logger.error(f"Error loading models: {e}")
         return None, None
-    
-# evaluate fackKB: Put your huggingface access tokens
-# access_token = "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"
-# tokenizer = AutoTokenizer.from_pretrained("roberta-base", padding="max_length", truncation=True)
-# factkb = AutoModelForSequenceClassification.from_pretrained("bunsenfeng/FactKB", num_labels = 2, use_auth_token=access_token)
 
 def evaluate_qa(index2ex, eval_file, tokenizer, factkb):
     """评估函数"""
@@ -117,6 +110,24 @@ def evaluate_qa(index2ex, eval_file, tokenizer, factkb):
 
     if all_fact_score:
         print(f"Average fact score: {statistics.mean(all_fact_score):.4f}")
+    # Accuracy
+    logger.info("Computing Accuracy...")
+    exact_match_count=0
+    acc_scores=0
+    import pdb
+    for pred, gold in zip(all_pred, all_gold):
+        if isinstance(gold, str):
+            gold = [gold]
+        if not isinstance(gold, list):
+            raise ValueError("Ground truth must be a list")
+        exact_match_count += ems(pred, gold)
+        acc_scores += calculate_acc(pred, gold)
+    
+    em = round(exact_match_count/len(all_pred), 4)
+    acc_score = round(acc_scores/len(all_pred), 4)
+    print("Exact Match:", em)
+    print("Accuracy:", acc_score)
+
     
     # ROUGE计算
     logger.info("Computing ROUGE scores...")
@@ -160,31 +171,19 @@ def evaluate_qa(index2ex, eval_file, tokenizer, factkb):
     # align_score = scorer.score(contexts=all_doc, claims=all_pred)
     # print(align_score)
 
-    # Accuracy
-    logger.info("Computing Accuracy...")
-    exact_match_count=0
-    acc_scores=0
-    import pdb
-    for pred, gold in zip(all_pred, all_gold):
-        exact_match_count += ems(pred, gold)
-        acc_scores += calculate_acc(pred, gold)
     
-    em = round(exact_match_count/len(all_pred), 4)
-    acc_score = round(acc_scores/len(all_pred), 4)
-    print("Exact Match:", em)
-    print("Accuracy:", acc_score)
-
 
 
 
 # read data
 def entity_data(dataset_path):
-    raw_data = []
+    
+    raw_data = {}
     with open(dataset_path) as f:
         for line in f:
             ex = json.loads(line)
             if ex["assigned_process"] == 0:
-                raw_data.append(ex)
+                raw_data[ex["input_index"]] = ex
             # break
         # raw_data = json.loads(f.read())
     return raw_data
@@ -193,8 +192,10 @@ def entity_data(dataset_path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_path", type=str, default="./eval/cnndm_example_input/cnndm_1_0.jsonl")
-    parser.add_argument("--pred_path", type=str, default="./eval/cnndm_example_input/cnndm_1.5_-0.5.jsonl.output_topp0.9_genlen100.jsonl")
+    parser.add_argument("--data_path", type=str, default="/home/gaoqiang/context_fidelity_boosting/eval/tapmwp_problems_test1k.jsonl")
+    parser.add_argument("--pred_path", type=str, default="/home/gaoqiang/context_fidelity_boosting/output/tapmwp/mistral-7b/tapmwp_problems_test1k.jsonl.output_topp0.9_genlen100_boost1.0.jsonl")
+    parser.add_argument("--factkb_model_path", type=str, default="bunsenfeng/FactKB")
+    parser.add_argument("--tokenizer_model_path", type=str, default="roberta-base")
     args = parser.parse_args()
 
     cache_dir = ".cache/huggingface"
