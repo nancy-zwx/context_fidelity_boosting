@@ -6,9 +6,11 @@ import datetime
 from huggingface_hub import login
 import json
 import logging
+import math
 import numpy as np
 import os
 from termcolor import colored
+import traceback
 import transformers
 from transformers import (
     CONFIG_MAPPING,
@@ -71,50 +73,99 @@ def get_context_token_ids(context_input_ids):
     return torch.unique(context_input_ids)
 
 def create_boost_mask(logits, context_tokens, delta):
-    device = logits.device
-    if not torch.is_tensor(delta):
-        delta = torch.tensor(delta, device=device)
     boost_mask = torch.zeros_like(logits)
     for token in context_tokens:
         boost_mask[..., token] = delta
     return boost_mask
 
 
+
 def compute_jsd(logits_with_context, logits_without_context):
-    """calculate Jensen-Shannon divergence"""
+    """calculate Jensen-Shannon divergence with numerical stability"""
     p = F.softmax(logits_with_context, dim=-1)
     q = F.softmax(logits_without_context, dim=-1)
-    m = 0.5 * (p + q)
     
-    jsd = 0.5 * (F.kl_div(m.log(), p, reduction='batchmean') + 
-                 F.kl_div(m.log(), q, reduction='batchmean'))
-    return jsd
+    p = torch.clamp(p, min=1e-10, max=1.0)
+    q = torch.clamp(q, min=1e-10, max=1.0)
+    p = p / p.sum(dim=-1, keepdim=True)
+    q = q / q.sum(dim=-1, keepdim=True)
+    
+    m = 0.5 * (p + q)
+    m = torch.clamp(m, min=1e-10, max=1.0)
+    m = m / m.sum(dim=-1, keepdim=True)
+    
+    kl_p_m = torch.sum(p * (torch.log(p) - torch.log(m)), dim=-1)
+    kl_q_m = torch.sum(q * (torch.log(q) - torch.log(m)), dim=-1)
+    
+    jsd = 0.5 * (kl_p_m + kl_q_m)
+    
+    return jsd.item()
 
-def compute_entropy(logits):
-    """calculate entropy"""
-    probs = F.softmax(logits, dim=-1)
-    entropy = -torch.sum(probs * torch.log(probs + 1e-10), dim=-1)
-    return entropy
 
 def get_adaptive_delta(logits_with_context, logits_without_context, args):
-    """get adaptive boost delta"""
-    jsd = compute_jsd(logits_with_context, logits_without_context)
+    """get global adaptive boost delta with safety checks"""
+    try:
+        jsd = compute_jsd(logits_with_context, logits_without_context)
+        
+        if torch.isnan(torch.tensor(jsd)) or jsd < 0:
+            return args.min_delta
+        
+        jsd = min(max(jsd, 0.0), 1.0)
+        
+        delta = args.min_delta + (args.max_delta - args.min_delta) * jsd
+        
+        return delta
     
-    args.min_delta = 1.0
-    args.max_delta = 10.0
-    delta = args.min_delta + (args.max_delta - args.min_delta) * jsd
+    except Exception as e:
+        logger.warning(f"Error in computing adaptive delta: {e}, using default delta")
+        return args.min_delta
     
-    return delta
-
-def get_adaptive_temperature(logits, args):
-    """get adaptive temperature"""
-    entropy = compute_entropy(logits)
-    temp = args.min_temp + args.base_temp * entropy
+def calculate_semantic_similarity(model, token_id, context_embeddings):
+    """calculate semantic similarity"""
+    with torch.no_grad():
+        # get token embedding
+        token_embedding = model.get_input_embeddings()(
+            torch.tensor([token_id]).to(context_embeddings.device)
+        )
+        # cosine similarity
+        similarities = F.cosine_similarity(
+            token_embedding,
+            context_embeddings,
+            dim=1
+        )
+        
+        return similarities.mean().item()
     
-    if torch.is_tensor(temp):
-        temp = temp.item()
+def get_attention_scores(model, input_ids, context_length):
+    """get attention scores"""
+    try:
+        # use output_attentions parameters
+        outputs = model(input_ids, output_attentions=True)
+        if hasattr(outputs, 'attentions') and outputs.attentions is not None:
+            last_layer_attention = outputs.attentions[-1]  
+            averaged_attention = last_layer_attention.mean(dim=1)  
+            scores = averaged_attention[0, -1, :context_length]  
+            return F.softmax(scores, dim=-1)
+            
+    except Exception as e:
+        print(f"Warning: Failed to get attention scores: {e}")
+        
+    try:
+        # or use hidden states
+        outputs = model(input_ids, output_hidden_states=True)
+        hidden_states = outputs.hidden_states[-1]  
+        query = hidden_states[:, -1:]  
+        key = hidden_states[:, :context_length]  
+        attention = torch.matmul(query, key.transpose(-2, -1))  
+        attention = attention / math.sqrt(query.size(-1))
+        scores = F.softmax(attention, dim=-1)[0, 0]  
+        return scores
+        
+    except Exception as e:
+        print(f"Warning: Failed to compute attention using hidden states: {e}")
     
-    return temp
+    # Fallback
+    return torch.ones(context_length).to(input_ids.device) / context_length
 
 def decode(args, batch_input_ids, dec_depth, model, tokenizer):
     batch_size = args.per_device_eval_batch_size
@@ -123,10 +174,8 @@ def decode(args, batch_input_ids, dec_depth, model, tokenizer):
     assert (args.max_seq_length - args.context_size - args.decode_truncate_len) % dec_depth == 0
     unit_seq_len = int((args.max_seq_length - args.context_size - args.decode_truncate_len) / dec_depth)
 
-    # get context input和question input
     if args.context_size > 0:
         unit_context_input_ids = batch_input_ids[:, :args.context_size].clone()
-        question_input_ids = batch_input_ids[:, args.context_size:].clone()
         context_tokens = get_context_token_ids(unit_context_input_ids[0])
     else:
         raise ValueError("context cannot be none")
@@ -134,12 +183,9 @@ def decode(args, batch_input_ids, dec_depth, model, tokenizer):
     history_decode_ids = None
     past_key_values = None
 
-    stats = {
-        'jsd_values': [],
-        'entropy_values': [],
-        'delta_values': [],
-        'temperature_values': []
-    }
+    # calculate context embeddings for semantic similarity
+    with torch.no_grad():
+        context_embeddings = model.get_input_embeddings()(unit_context_input_ids[0, :args.context_size])
 
     if args.model_category == 'seq2seq':
         model_kwargs = model._prepare_encoder_decoder_kwargs_for_generation(
@@ -157,87 +203,62 @@ def decode(args, batch_input_ids, dec_depth, model, tokenizer):
         if args.model_category == 'causal':
             if 'llama' in args.model_name_or_path.lower():
                 if past_key_values is not None:
-                    model_inputs_with_context = {
+                    model_inputs = {
                         "input_ids": unit_context_input_ids[:, -1:],
                         "attention_mask": torch.ones_like(unit_context_input_ids),
                         "past_key_values": past_key_values,
                         "use_cache": True
                     }
                 else:
-                    model_inputs_with_context = {
+                    model_inputs = {
                         "input_ids": unit_context_input_ids,
                         "attention_mask": torch.ones_like(unit_context_input_ids),
                         "use_cache": True
                     }
-                
-                # dimension consistent
-                curr_token = unit_context_input_ids[:, -1:] if past_key_values is not None else unit_context_input_ids
-                model_inputs_without_context = {
-                    "input_ids": curr_token,
-                    "attention_mask": torch.ones_like(curr_token),
-                    "use_cache": True
-                }
             else:
-                model_inputs_with_context = model.prepare_inputs_for_generation(
+                model_inputs = model.prepare_inputs_for_generation(
                     unit_context_input_ids, 
                     past_key_values=past_key_values
                 )
-                curr_token = unit_context_input_ids[:, -1:] if past_key_values is not None else unit_context_input_ids
-                model_inputs_without_context = model.prepare_inputs_for_generation(
-                    curr_token,
-                    past_key_values=None
-                )
         elif args.model_category == 'seq2seq':
-            model_inputs_with_context = model.prepare_inputs_for_generation(
+            model_inputs = model.prepare_inputs_for_generation(
                 history_decode_ids, 
                 **model_kwargs
-            )
-            model_inputs_without_context = model.prepare_inputs_for_generation(
-                history_decode_ids,
-                **model_kwargs 
             )
         else:
             raise ValueError("model category not supported")
 
-        outputs_with_context = model(**model_inputs_with_context, output_hidden_states=False)
-        outputs_without_context = model(**model_inputs_without_context, output_hidden_states=False)
+        outputs = model(**model_inputs, output_hidden_states=False, output_attentions=True)
 
-        logits_with_context = outputs_with_context.logits[:, -1:, :].clone().contiguous()
-        logits_without_context = outputs_without_context.logits[:, -1:, :].clone().contiguous()
+        # get logits
+        logits = outputs.logits[:, -1:, :].clone().contiguous()
+        # apply global adaptive boost first
+        boost_mask = create_boost_mask(logits, context_tokens, args.adaptive_delta)
 
-        # get adaptive parameters
-        if args.adaptive_mode in ["delta_only", "both"]:
-            delta = get_adaptive_delta(logits_with_context, logits_without_context, args)
-            if torch.is_tensor(delta):
-                delta = delta.item()
-        else:
-            delta = args.fixed_delta
+        # token-wise adaptive boost base on importance 
+        if hasattr(args, 'use_global') and args.use_global.lower() == "false":
+            attention_scores = get_attention_scores(
+                model,
+                unit_context_input_ids,
+                args.context_size
+            )
+            
+            for token_idx, token in enumerate(context_tokens):
+                semantic_sim = calculate_semantic_similarity(
+                    model,
+                    token,
+                    context_embeddings
+                )
+                semantic_score = (semantic_sim + 1) / 2
+                
+                attn_score = attention_scores[token_idx].item()
+                importance = args.lambda1 * attn_score + args.lambda2 * semantic_score
+                boost_mask[..., token] = args.adaptive_delta * importance
 
-        if args.adaptive_mode in ["temp_only", "both"]:
-            temperature = get_adaptive_temperature(logits_with_context, args)
-        else:
-            temperature = args.fixed_temp
 
-        # record
-        if args.stats_logging:
-            stats['jsd_values'].append(compute_jsd(logits_with_context, logits_without_context).item())
-            stats['entropy_values'].append(compute_entropy(logits_with_context).item())
-            stats['delta_values'].append(float(delta))  
-            stats['temperature_values'].append(float(temperature))  
+        enhanced_logits = logits + boost_mask
 
-        delta_tensor = torch.tensor(delta, device=logits_with_context.device)
-        temperature_tensor = torch.tensor(temperature, device=logits_with_context.device)
-
-        # boost mask and temperature
-        boost_mask = create_boost_mask(logits_with_context, context_tokens, delta_tensor)
-        enhanced_logits = logits_with_context + boost_mask
-        enhanced_logits = enhanced_logits / temperature_tensor
-
-        if args.assigned_weight >= 0:
-            score = filter_logits_top_p(enhanced_logits, top_p=args.filter_top_p)
-        else:
-            score = filter_logits_top_p(enhanced_logits, top_p=args.filter_top_p_prior, negative_multiplier=True)
-
+        score = filter_logits_top_p(enhanced_logits, top_p=args.filter_top_p)
         projected_logits = logits_sampling_projection(score, top_p=args.projection_top_p, one_hot_value=args.one_hot_value)
         
         simplex = torch.nn.functional.softmax(projected_logits, dim=-1)
@@ -245,7 +266,6 @@ def decode(args, batch_input_ids, dec_depth, model, tokenizer):
 
         if args.model_category == 'causal':
             unit_context_input_ids = torch.cat((unit_context_input_ids, real_token_ids_list), dim=1)
-            question_input_ids = torch.cat((question_input_ids, real_token_ids_list), dim=1)
 
         if history_decode_ids is None:
             history_decode_ids = real_token_ids_list
@@ -253,20 +273,12 @@ def decode(args, batch_input_ids, dec_depth, model, tokenizer):
             history_decode_ids = torch.cat((history_decode_ids, real_token_ids_list), dim=1)
 
         if args.model_category == 'causal':
-            past_key_values = outputs_with_context.past_key_values
+            past_key_values = outputs.past_key_values
         elif args.model_category == 'seq2seq':
-            model_kwargs["past_key_values"] = outputs_with_context.past_key_values
+            model_kwargs["past_key_values"] = outputs.past_key_values
 
         if real_token_ids_list[0][-1] == model.generation_config.eos_token_id:
             break
-
-    # compute average
-    avg_stats = {
-        'avg_jsd': sum(stats['jsd_values']) / len(stats['jsd_values']),
-        'avg_entropy': sum(stats['entropy_values']) / len(stats['entropy_values']),
-        'avg_delta': sum(stats['delta_values']) / len(stats['delta_values']),
-        'avg_temperature': sum(stats['temperature_values']) / len(stats['temperature_values'])
-    }
 
     # output
     if args.context_size > 0:
@@ -279,12 +291,12 @@ def decode(args, batch_input_ids, dec_depth, model, tokenizer):
     sampled_sequences = tokenizer.batch_decode(history_decode_ids.clone().detach().to('cpu'), skip_special_tokens=True)
     logger.info(f"context: {context_sequences}")
     logger.info(f"sampled: {colored(str(sampled_sequences), 'red')}")
-    logger.info(f"Statistics: {avg_stats}")
 
-    return history_decode_ids, init_context_input_ids, avg_stats, sampled_sequences, context_sequences, stats
+    return history_decode_ids, init_context_input_ids, None, sampled_sequences, context_sequences, None
+
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Finetune a transformers model on a Masked Language Modeling task")
+    parser = argparse.ArgumentParser()
 
     parser.add_argument(
         "--model_name_or_path",
@@ -315,18 +327,8 @@ def parse_args():
         default=1,
         help="Batch size (per device) for the evaluation dataloader.",
     )
-    parser.add_argument(
-        "--output_dir", 
-        type=str, 
-        default=None, 
-        help="Where to store the final model."
-    )
-    parser.add_argument(
-        "--seed", 
-        type=int, 
-        default=None, 
-        help="A seed for reproducible training."
-    )
+    parser.add_argument("--output_dir", type=str, default=None, help="Where to store the final model.")
+    parser.add_argument("--seed", type=int, default=None, help="A seed for reproducible training.")
     parser.add_argument(
         "--model_type",
         type=str,
@@ -340,149 +342,66 @@ def parse_args():
         default=None,
         help="The maximum total input sequence length after tokenization. Sequences longer than this will be truncated.",
     )
-    
+    parser.add_argument("--init_blank_language_model", action="store_true", help="Whether or not to use a completely blank LM.")
     parser.add_argument(
-        "--init_blank_language_model", 
-        action="store_true",
-        help="Whether or not to use a completely blank LM."
+        "--file_mode", type=str, default="", help="",
     )
     parser.add_argument(
-        "--file_mode", 
-        type=str, 
-        default="", 
-        help="File mode configuration"
+        "--train_mode", type=str, default="", help="",
     )
     parser.add_argument(
-        "--train_mode", 
-        type=str, 
-        default="", 
-        help="Training mode configuration"
-    )
-    
-    # decode parameters
+        "--decode_truncate_len", type=int, default=50, help="",
+    ) 
     parser.add_argument(
-        "--decode_truncate_len", 
-        type=int, 
-        default=50, 
-        help="How many tokens to truncate from right"
+        "--decode_depth", type=int, default=2, help="",
     )
     parser.add_argument(
-        "--decode_depth", 
-        type=int, 
-        default=2, 
-        help="Decoding depth"
+        "--projection_top_p", type=float, default=0.2, help="",
     )
     parser.add_argument(
-        "--projection_top_p", 
-        type=float, 
-        default=0.2, 
-        help="Top-p for projection sampling"
+        "--filter_top_p", type=float, default=1.0, help="",
     )
     parser.add_argument(
-        "--filter_top_p", 
-        type=float, 
-        default=1.0, 
-        help="Top-p for filtering"
+        "--filter_top_p_prior", type=float, default=1.0, help="",
     )
-    parser.add_argument(
-        "--filter_top_p_prior", 
-        type=float, 
-        default=1.0, 
-        help="Top-p for prior filtering"
-    )
+    parser.add_argument("--big_model_inference", type=str, default="no")
 
-    parser.add_argument(
-        "--big_model_inference", 
-        type=str, 
-        default="no",
-        help="Whether to use big model inference mode"
-    )
-
-    # adaptive related boost parameters
+    # add adaptive related parameters
     parser.add_argument(
         "--min_delta",
         type=float,
         default=1.0,
-        help="Minimum boost delta value"
+        help="Minimum boost value for adaptive delta"
     )
     parser.add_argument(
         "--max_delta",
         type=float,
-        default=10.0,
-        help="Maximum boost delta value"
+        default=3.0,
+        help="Maximum boost value for adaptive delta"
     )
     parser.add_argument(
-        "--min_temp",
+        "--lambda1",
         type=float,
-        default=0.1,
-        help="Minimum temperature value"
+        default=0.6,
+        help="Weight for attention score in local mode"
     )
     parser.add_argument(
-        "--base_temp",
+        "--lambda2",
         type=float,
-        default=1.0,
-        help="Base temperature value"
+        default=0.4,
+        help="Weight for semantic score in local mode"
     )
     parser.add_argument(
-        "--adaptive_mode",
+        "--use_global",
         type=str,
-        default="both",
-        choices=["delta_only", "temp_only", "both", "none"],
-        help="Which adaptive mechanism to use: delta_only, temp_only, both, or none"
-    )
-    parser.add_argument(
-        "--jsd_threshold",
-        type=float,
-        default=0.0,
-        help="JSD threshold below which minimum delta is used"
-    )
-    parser.add_argument(
-        "--entropy_threshold",
-        type=float,
-        default=0.0,
-        help="Entropy threshold below which minimum temperature is used"
-    )
-    parser.add_argument(
-        "--fixed_delta",
-        type=float,
-        default=2.0,
-        help="Fixed delta value when not using adaptive delta"
-    )
-    parser.add_argument(
-        "--fixed_temp",
-        type=float,
-        default=1.0,
-        help="Fixed temperature value when not using adaptive temperature"
-    )
-    parser.add_argument(
-        "--stats_logging",
-        action="store_true",
-        help="Whether to log detailed statistics during generation"
-    )
-
-    # output parameters
-    parser.add_argument(
-        "--output_stats",
-        action="store_true",
-        help="Whether to include statistics in output files"
-    )
-    parser.add_argument(
-        "--output_format",
-        type=str,
-        default="jsonl",
-        choices=["jsonl", "json"],
-        help="Output file format"
-    )
-    parser.add_argument(
-        "--output_prefix",
-        type=str,
-        default="",
-        help="Prefix for output filenames"
+        default="false",
+        help="Whether to use only global boost (true) or add local boost (false)"
     )
 
     args = parser.parse_args()
 
     return args
+
 
 def get_small_model_name(original_model_name):
     """map large models to smaller ones for test"""
@@ -491,18 +410,11 @@ def get_small_model_name(original_model_name):
     }
     return model_mapping.get(original_model_name, "huggyllama/llama-7b")  
 
+
+
 def main():
     args = parse_args()
 
-    if args.adaptive_mode not in ["delta_only", "temp_only", "both", "none"]:
-        raise ValueError(f"Invalid adaptive_mode: {args.adaptive_mode}")
-        
-    if args.min_delta > args.max_delta:
-        raise ValueError(f"min_delta ({args.min_delta}) cannot be greater than max_delta ({args.max_delta})")
-        
-    if args.min_temp > args.base_temp:
-        raise ValueError(f"min_temp ({args.min_temp}) cannot be greater than base_temp ({args.base_temp})")
-    
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
@@ -510,7 +422,7 @@ def main():
     )
     logger = logging.getLogger(__name__)
 
-    cache_dir = "/apdcephfs_cq10/share_1567347/share_info/wendyzhang/.cache/huggingface"
+    cache_dir = ".cache/huggingface"
     os.makedirs(cache_dir, exist_ok=True)
     os.environ['TRANSFORMERS_CACHE'] = cache_dir
     os.environ['HF_HOME'] = cache_dir
@@ -518,30 +430,39 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if torch.cuda.is_available():
         torch.cuda.set_device(0)
-
     if args.seed is not None:
         torch.manual_seed(args.seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(args.seed)
 
+    # input
     args.file_mode = args.file_mode.split('|')
     assert args.file_mode[0] == "fin"
     assert os.path.exists(args.file_mode[1])
     fin_path = args.file_mode[1]
-    fin_data = []
+    fin_data_pairs = []
     with open(fin_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            proc_line = line.strip()
-            if proc_line:
-                fin_data.append(json.loads(proc_line))
-
-    first_data = fin_data[0]
+        lines = f.readlines()
+        for i in range(0, len(lines)-1):  
+            data = json.loads(lines[i])
+            next_data = json.loads(lines[i+1])      
+            # paris of with/without context input
+            if (data['input_index'] == next_data['input_index'] and 
+                data.get('assigned_process') == 0 and 
+                next_data.get('assigned_process') == 1):
+                fin_data_pairs.append({
+                    'with_context': data,
+                    'without_context': next_data
+                })
+    # model name
+    first_data = fin_data_pairs[0]['with_context'] 
     original_model_name = first_data['assigned_model'].split('|')[0]
     args.model_name_or_path = get_small_model_name(original_model_name)
     logger.info(f"Original model: {original_model_name}")
     logger.info(f"Using small model for testing: {args.model_name_or_path}")
 
     try:
+        # tokenizer
         logger.info("Loading tokenizer...")
         if 'llama' in args.model_name_or_path.lower():
             tokenizer = AutoTokenizer.from_pretrained(
@@ -566,7 +487,9 @@ def main():
             )
             if not tokenizer.pad_token:
                 tokenizer.pad_token = tokenizer.eos_token
+        logger.info("Tokenizer loaded successfully")
 
+        # model
         logger.info("Loading model...")
         if 'llama' in args.model_name_or_path.lower():
             model = AutoModelForCausalLM.from_pretrained(
@@ -593,29 +516,50 @@ def main():
         
         model = model.to(device)
         model.eval()
-
+        logger.info("Model loaded successfully and moved to GPU")
         args.is_llama = 'llama' in args.model_name_or_path.lower()
         args.model_category = 'causal'
         args.vocab_size = model.config.vocab_size
         args.hidden_size = model.config.hidden_size
         args.one_hot_value = 5.0
         args.tokenizer = tokenizer
-            
+
+        # generate
         export_list = []
         args.orig_decode_truncate_len = args.decode_truncate_len
-        
-        with torch.no_grad():
-            for _fd in tqdm(fin_data, desc="Processing inputs"):
-                try:
-                    args.assigned_weight = _fd.get('assigned_weight', 1.0)
-                    args.filter_top_p = _fd.get('filter_p', getattr(args, 'filter_top_p', 1.0))
-                    args.filter_top_p_prior = _fd.get('filter_p_prior', getattr(args, 'filter_top_p_prior', 1.0))
 
-                    ctx_field_name = 'context_string'
-                    assert ctx_field_name in _fd
+        with torch.no_grad():
+            for data_pair in tqdm(fin_data_pairs, desc="Processing inputs"):
+                try:
+                    with_context_data = data_pair['with_context']
+                    without_context_data = data_pair['without_context']
+                    
+                    args.assigned_weight = with_context_data.get('assigned_weight', 1.0)
+                    args.filter_top_p = with_context_data.get('filter_p', getattr(args, 'filter_top_p', 1.0))
+                    args.filter_top_p_prior = with_context_data.get('filter_p_prior', getattr(args, 'filter_top_p_prior', 1.0))
+                    
+                    # global adaptive delta
+                    with_context_input = tokenizer(
+                        with_context_data['context_string'], 
+                        return_tensors="pt"
+                    ).input_ids.to(device)
+                    
+                    without_context_input = tokenizer(
+                        without_context_data['context_string'],
+                        return_tensors="pt"
+                    ).input_ids.to(device)
+                    
+                    with_context_outputs = model(with_context_input)
+                    without_context_outputs = model(without_context_input)
+                    
+                    with_context_logits = with_context_outputs.logits[:,-1,:]
+                    without_context_logits = without_context_outputs.logits[:,-1,:]
+                    
+                    args.adaptive_delta = get_adaptive_delta(with_context_logits, without_context_logits, args)
+                    logger.info(f"Sample {with_context_data['input_index']}")
                     
                     input_ids = torch.tensor(
-                        tokenizer.encode(_fd[ctx_field_name], add_special_tokens=True),
+                        tokenizer.encode(with_context_data['context_string'], add_special_tokens=True),
                         dtype=torch.long
                     ).unsqueeze(0).to(device)
                     
@@ -623,55 +567,75 @@ def main():
                     args.decode_truncate_len = args.orig_decode_truncate_len - args.context_size
                     
                     if args.decode_truncate_len < 0:
-                        logger.warning(f"Skipping long input {_fd['input_index']}")
+                        logger.warning(f"Skipping long input {with_context_data['input_index']}")
                         continue
-
+                    
+                    # decode
                     with torch.cuda.amp.autocast():
-                        history_decode_ids, init_context_ids, avg_stats, sampled_sequences, context_sequences, stats = \
+                        history_decode_ids, init_context_ids, _, sampled_sequences, context_sequences, _ = \
                             decode(args, input_ids, args.decode_depth, model, tokenizer)
 
+                    # results
                     export_dict = {
                         'tokens': [history_decode_ids.tolist()[0]],
                         'string': [sampled_sequences[0]],
-                        'input_index': _fd['input_index'],
+                        'input_index': with_context_data['input_index'],
                         'output_index': len(export_list),
                         'assigned_model': args.model_name_or_path,
                         'original_model': original_model_name,
-                        'assigned_weight': _fd.get('assigned_weight', 1.0),
+                        'assigned_weight': with_context_data.get('assigned_weight', 1.0),
                         'assigned_process': 0,
-                        'avg_delta': avg_stats['avg_delta'],
-                        'avg_temperature': avg_stats['avg_temperature'],
-                        'avg_jsd': avg_stats['avg_jsd'],
-                        'avg_entropy': avg_stats['avg_entropy'],
+                        'adaptive_delta': args.adaptive_delta,  
+                        'min_delta': args.min_delta,  
+                        'max_delta': args.max_delta,  
+                        'use_global': args.use_global,  # 是否只使用全局模式
+                        'lambda1': args.lambda1,  # attention score weight (局部模式)
+                        'lambda2': args.lambda2,  # semantic similarity weight (局部模式)
                         'context': context_sequences[0] if context_sequences else None,
-                        'detailed_stats': stats
                     }
                     export_list.append(export_dict)
+                    mode_str = "Global" if args.use_global else "Token-wise"
+                    logger.info(f"Processed input {with_context_data['input_index']} using {mode_str} boosting mode")
+                    logger.info(f"Global adaptive delta: {args.adaptive_delta}")
 
                 except Exception as e:
-                    logger.error(f"Error processing input {_fd['input_index']}: {str(e)}")
+                    logger.error(f"Error processing input {with_context_data['input_index']}: {str(e)}")
                     logger.error("Error details:", exc_info=True)
                     continue
 
+        # output results
         output_dir = "./output/llama7b"
         os.makedirs(output_dir, exist_ok=True)
         base_filename = os.path.basename(fin_path)
-        out_json_fn = f"{base_filename}.output_topp{args.projection_top_p}_genlen{args.decode_depth}_adaptive.jsonl"
+
+        out_json_fn = (f"{base_filename}.output_topp{args.projection_top_p}_"
+                    f"genlen{args.decode_depth}_"
+                    f"delta{args.min_delta}-{args.max_delta}_"  
+                    f"l1{args.lambda1}_"
+                    f"l2{args.lambda2}_"
+                    f"global{args.use_global}.jsonl")
+
         out_json_fn = os.path.join(output_dir, out_json_fn)
         os.makedirs(os.path.dirname(out_json_fn), exist_ok=True)
-        
+
         with open(out_json_fn, mode="w") as f_out:
             for export in export_list:
                 f_out.write(json.dumps(export))
                 f_out.write("\n")
 
-        logger.info(f"Successfully processed {len(export_list)} out of {len(fin_data)} inputs")
+        logger.info(f"Successfully processed {len(export_list)} out of {len(fin_data_pairs)} inputs")
         logger.info(f"Results saved to {out_json_fn}")
+        logger.info(f"Processing summary:")
+        logger.info(f"- Delta range: {args.min_delta} - {args.max_delta}")
+        logger.info(f"- Global mode: {args.use_global}")
+        logger.info(f"- Lambda1 (attention): {args.lambda1}")
+        logger.info(f"- Lambda2 (semantic): {args.lambda2}")
 
     except Exception as e:
         logger.error(f"Fatal error: {str(e)}")
         logger.error("Error details:", exc_info=True)
         raise
+
 
 if __name__ == "__main__":
     main()

@@ -4,104 +4,110 @@ hf_cache=".cache/huggingface"
 mkdir -p ${hf_cache}
 export TRANSFORMERS_CACHE="${hf_cache}"
 export HF_HOME="${hf_cache}"
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
-# fix parameters
+# parameters
 GLOBALLEN="2048"
 MAXCTXLEN="1948"
 GENLEN="100"
 TOPP="0.9"
 FN_PREFIX="./eval/cnndm_example_input/cnndm"
 
-# dir
+# results dir
 RESULTS_DIR="./results/llama7b"
 OUTPUT_DIR="./output/llama7b"
 mkdir -p ${RESULTS_DIR}
 mkdir -p ${OUTPUT_DIR}
 
-# adaptive parameters
-ADAPTIVE_MODES=("delta_only" "temp_only" "both")
-MIN_DELTAS=("1.0")
-MAX_DELTAS=("10.0")
-MIN_TEMPS=("0.1")
-BASE_TEMPS=("1.0")
+
+# parameters
+MIN_DELTAS=("2.0")  
+MAX_DELTAS=("10.0")  
+LAMBDA1S=("0.6")    # lambda2 = 1-lambda1
+USE_GLOBALS=("false") # 是否只用全局增强
 
 # decode and evaluate
-for MODE in "${ADAPTIVE_MODES[@]}"
+for MIN_DELTA in "${MIN_DELTAS[@]}"
 do
-    for MIN_DELTA in "${MIN_DELTAS[@]}"
+    for MAX_DELTA in "${MAX_DELTAS[@]}"
     do
-        for MAX_DELTA in "${MAX_DELTAS[@]}"
+        for LAMBDA1 in "${LAMBDA1S[@]}"
         do
-            for MIN_TEMP in "${MIN_TEMPS[@]}"
+            LAMBDA2=$(echo "1 - $LAMBDA1" | bc)
+            
+            for USE_GLOBAL in "${USE_GLOBALS[@]}"
             do
-                for BASE_TEMP in "${BASE_TEMPS[@]}"
-                do
-                    echo "-------------Processing Adaptive Mode: ${MODE}-------------"
-                    echo "Min Delta: ${MIN_DELTA}, Max Delta: ${MAX_DELTA}"
-                    echo "Min Temp: ${MIN_TEMP}, Base Temp: ${BASE_TEMP}"
+                echo "Processing: min_delta=${MIN_DELTA}, max_delta=${MAX_DELTA}, lambda1=${LAMBDA1}, lambda2=${LAMBDA2}, global=${USE_GLOBAL}"
+                
+                WEIGHT="1_0"
+                TESTFILE="fin|${FN_PREFIX}_${WEIGHT}.jsonl"
+                BASE_OUTPUT_FILE="$(basename ${FN_PREFIX}_${WEIGHT}.jsonl).output_topp${TOPP}_genlen${GENLEN}_delta${MIN_DELTA}-${MAX_DELTA}_l1${LAMBDA1}_l2${LAMBDA2}_global${USE_GLOBAL}.jsonl"
+                OUTPUT_FILE="${OUTPUT_DIR}/${BASE_OUTPUT_FILE}"
+                
+                # run decode
+                echo "Running decode..."
+                python group_decode_adaptive_fileio.py \
+                    --max_seq_length ${GLOBALLEN} \
+                    --model_name_or_path dummy \
+                    --seed 2023 \
+                    --use_slow_tokenizer \
+                    --file_mode ${TESTFILE} \
+                    --decode_truncate_len ${MAXCTXLEN} \
+                    --decode_depth ${GENLEN} \
+                    --train_mode decode \
+                    --projection_top_p ${TOPP} \
+                    --min_delta ${MIN_DELTA} \
+                    --max_delta ${MAX_DELTA} \
+                    --lambda1 ${LAMBDA1} \
+                    --lambda2 ${LAMBDA2} \
+                    --use_global ${USE_GLOBAL}
+                
+                # check if succeed
+                if [ $? -eq 0 ]; then
+                    echo "Decode completed successfully"
                     
-                    WEIGHT="1_0"
-                    TESTFILE="fin|${FN_PREFIX}_${WEIGHT}.jsonl"
-                    BASE_OUTPUT_FILE="$(basename ${FN_PREFIX}_${WEIGHT}.jsonl).output_topp${TOPP}_genlen${GENLEN}_adaptive_${MODE}.jsonl"
-                    OUTPUT_FILE="${OUTPUT_DIR}/${BASE_OUTPUT_FILE}"
+                    # run evaluation
+                    echo "Running evaluate..."
+                    python ./eval/evaluate_summary.py \
+                        --pred_path $OUTPUT_FILE \
+                        --data_path "${FN_PREFIX}_${WEIGHT}.jsonl" \
+                        2>&1 | tee "${RESULTS_DIR}/evaluate_results_delta${MIN_DELTA}-${MAX_DELTA}_l1${LAMBDA1}_l2${LAMBDA2}_global${USE_GLOBAL}.log"
                     
-                    # run decode
-                    echo "Running decode with adaptive mode ${MODE}..."
-                    python group_decode_adaptive_fileio.py \
-                        --max_seq_length ${GLOBALLEN} \
-                        --model_name_or_path dummy \
-                        --seed 2023 \
-                        --use_slow_tokenizer \
-                        --file_mode ${TESTFILE} \
-                        --decode_truncate_len ${MAXCTXLEN} \
-                        --decode_depth ${GENLEN} \
-                        --train_mode decode \
-                        --projection_top_p ${TOPP} \
-                        --adaptive_mode ${MODE} \
-                        --min_delta ${MIN_DELTA} \
-                        --max_delta ${MAX_DELTA} \
-                        --min_temp ${MIN_TEMP} \
-                        --base_temp ${BASE_TEMP} \
-                        --output_stats \
-                        --stats_logging
-                    
-                    # check if succeed
                     if [ $? -eq 0 ]; then
-                        echo "Decode completed successfully for mode ${MODE}"
-                        
-                        # run evaluate
-                        echo "Running evaluate for mode ${MODE}..."
-                        python /apdcephfs_cq10/share_1567347/share_info/wendyzhang/cfb/eval/evaluate_summary.py \
-                            --pred_path $OUTPUT_FILE \
-                            --data_path "${FN_PREFIX}_${WEIGHT}.jsonl" \
-                            2>&1 | tee "${RESULTS_DIR}/evaluate_results_${MODE}.log"
-                        
-                        if [ $? -eq 0 ]; then
-                            echo "Evaluate completed successfully for mode ${MODE}"
-                        else
-                            echo "Error: Evaluate failed for mode ${MODE}"
-                            exit 1
-                        fi
+                        echo "Evaluate completed successfully"
                     else
-                        echo "Error: Decode failed for mode ${MODE}"
+                        echo "Error: Evaluate failed"
                         exit 1
                     fi
-                done
+                else
+                    echo "Error: Decode failed"
+                    exit 1
+                fi
             done
         done
     done
 done
 
-# results
-echo "----------------Final Results----------------"
-for MODE in "${ADAPTIVE_MODES[@]}"
+# print results
+echo "All Results:"
+for MIN_DELTA in "${MIN_DELTAS[@]}"
 do
-    echo "Results for adaptive mode ${MODE}:"
-    if [ -f "${RESULTS_DIR}/evaluate_results_${MODE}.log" ]; then
-        cat "${RESULTS_DIR}/evaluate_results_${MODE}.log"
-        echo "----------------------------------------"
-    else
-        echo "No results found for mode ${MODE}"
-    fi
+    for MAX_DELTA in "${MAX_DELTAS[@]}"
+    do
+        for LAMBDA1 in "${LAMBDA1S[@]}"
+        do
+            LAMBDA2=$(echo "1 - $LAMBDA1" | bc)
+            for USE_GLOBAL in "${USE_GLOBALS[@]}"
+            do
+                RESULT_FILE="${RESULTS_DIR}/evaluate_results_delta${MIN_DELTA}-${MAX_DELTA}_l1${LAMBDA1}_l2${LAMBDA2}_global${USE_GLOBAL}.log"
+                if [ -f "$RESULT_FILE" ]; then
+                    echo "Results for min_delta=${MIN_DELTA}, max_delta=${MAX_DELTA}, lambda1=${LAMBDA1}, lambda2=${LAMBDA2}, global=${USE_GLOBAL}:"
+                    cat "$RESULT_FILE"
+                    echo "----------------------------------------"
+                else
+                    echo "No results for min_delta=${MIN_DELTA}, max_delta=${MAX_DELTA}, lambda1=${LAMBDA1}, lambda2=${LAMBDA2}, global=${USE_GLOBAL}"
+                fi
+            done
+        done
+    done
 done
