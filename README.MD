@@ -12,7 +12,6 @@ CFB supports three modes of boosting:
 
 1. Static Boosting
 - Uses fixed delta value for all context tokens
-- Simple and efficient implementation
 - Suitable for tasks with uniform context importance
 - Run with `group_decode_watermark_fileio.py`
 
@@ -26,7 +25,6 @@ CFB supports three modes of boosting:
 3. Token-wise Adaptive Boosting
 - Considers per-token importance through attention scores and semantic similarity
 - Combines attention weights (λ1) and semantic similarity weights (λ2)
-- More fine-grained control over context token importance
 - Better for precise context utilization
 - Run with `group_decode_adaptive_fileio.py`
 
